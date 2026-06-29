@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Golf Physics Demo</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #87ceeb; }
+  #hud {
+    position: absolute; top: 10px; left: 10px; color: #fff;
+    font-family: monospace; font-size: 14px; background: rgba(0,0,0,0.5);
+    padding: 8px 12px; border-radius: 6px; line-height: 1.4;
+  }
+  button {
+    margin-top: 6px; padding: 4px 10px; cursor: pointer;
+  }
+</style>
+</head>
+<body>
+<div id="hud">
+  phase: <span id="phase">-</span><br/>
+  pos: <span id="pos">-</span><br/>
+  speed: <span id="speed">-</span> m/s<br/>
+  <hr style="border-color:#555"/>
+  <b>Camera:</b> ←/→ orbit, ↑/↓ zoom, W/S tilt
+</div>
+
+<div id="controls">
+  <h3>Shot Setup</h3>
+
+  <label>Speed: <span id="speedVal">35</span> m/s</label>
+  <input type="range" id="speedSlider" min="5" max="70" step="1" value="35" />
+
+  <label>Launch angle (vertical): <span id="launchVal">20</span>°</label>
+  <input type="range" id="launchSlider" min="0" max="80" step="1" value="20" />
+
+  <label>Direction (azimuth, 3D): <span id="azimuthVal">0</span>°</label>
+  <input type="range" id="azimuthSlider" min="-90" max="90" step="1" value="0" />
+
+  <label>Backspin: <span id="spinVal">350</span> rpm</label>
+  <input type="range" id="spinSlider" min="0" max="6000" step="50" value="350" />
+
+  <label>Sidespin: <span id="sidespinVal">0</span> rpm</label>
+  <input type="range" id="sidespinSlider" min="-3000" max="3000" step="50" value="0" />
+
+  <button id="hitBtn">Hit Ball</button>
+</div>
+
+<style>
+  #controls {
+    position: absolute; top: 10px; right: 10px; width: 240px;
+    color: #fff; font-family: monospace; font-size: 13px;
+    background: rgba(0,0,0,0.6); padding: 12px 14px; border-radius: 8px;
+  }
+  #controls h3 { margin: 0 0 8px 0; font-size: 14px; }
+  #controls label { display: block; margin-top: 8px; }
+  #controls input[type="range"] { width: 100%; }
+  #controls button {
+    margin-top: 12px; width: 100%; padding: 6px; cursor: pointer;
+    font-weight: bold;
+  }
+</style>
+
+<!-- Three.js via CDN import map -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { createInitialState, step } from './physics/index.js';
+
+// ---------------- Three.js scene setup ----------------
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87ceeb);
+
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
+camera.position.set(-15, 12, 0); // initial; overwritten every frame by applyCamera()
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+// Lighting
+scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+const sun = new THREE.DirectionalLight(0xffffff, 0.8);
+sun.position.set(50, 80, 20);
+scene.add(sun);
+
+// Ground (fairway) -- given a gentle height variation here on purpose, to
+// prove the getGroundHeight() wiring actually works on non-flat terrain,
+// not just a flat plane at y=0.
+function terrainHeight(x, z) {
+  return 0.6 * Math.sin(x * 0.05) * Math.cos(z * 0.08);
+}
+
+const groundSegments = 200;
+const groundGeo = new THREE.PlaneGeometry(1000, 1000, groundSegments, groundSegments);
+groundGeo.rotateX(-Math.PI / 2);
+{
+  const posAttr = groundGeo.attributes.position;
+  for (let i = 0; i < posAttr.count; i++) {
+    const x = posAttr.getX(i);
+    const z = posAttr.getZ(i);
+    posAttr.setY(i, terrainHeight(x, z));
+  }
+  groundGeo.computeVertexNormals();
+}
+const ground = new THREE.Mesh(
+  groundGeo,
+  new THREE.MeshStandardMaterial({ color: 0x2e7d32 })
+);
+scene.add(ground);
+
+// This is what gets passed into step() so the physics engine queries the
+// SAME height the mesh actually renders at -- this is the fix for
+// "groundY differs across a real mesh" from the physics refactor.
+function getGroundHeight(x, z) {
+  return terrainHeight(x, z);
+}
+
+// Ball mesh
+const ballRadius = 0.02135; // matches DEFAULT_PARAMS.R -- keep these in sync
+const ballGeo = new THREE.SphereGeometry(ballRadius, 24, 24);
+const ballMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
+const ballMesh = new THREE.Mesh(ballGeo, ballMat);
+scene.add(ballMesh);
+
+// Optional: small trail so you can see the parabola/roll shape
+const trailPoints = [];
+const trailGeo = new THREE.BufferGeometry();
+const trailMat = new THREE.LineBasicMaterial({ color: 0xffff00 });
+const trailLine = new THREE.Line(trailGeo, trailMat);
+scene.add(trailLine);
+
+// ---------------- Camera controls (arrow keys) ----------------
+// Spherical camera orbiting around the ball: distance + azimuth + elevation.
+const camState = {
+  distance: 12,
+  azimuth: -2.5,    // radians, angle around the ball (horizontal)
+  elevation: 0.45,  // radians, angle above the ground
+};
+
+const CAM_MIN_DIST = 2;
+const CAM_MAX_DIST = 80;
+const CAM_MIN_ELEV = 0.05;
+const CAM_MAX_ELEV = 1.5;
+
+const keysDown = {};
+window.addEventListener('keydown', (e) => { keysDown[e.code] = true; });
+window.addEventListener('keyup', (e) => { keysDown[e.code] = false; });
+
+function updateCameraFromKeys(dt) {
+  const orbitSpeed = 1.2;   // rad/sec      <- Left/Right arrows
+  const zoomSpeed = 15;     // m/sec        <- Up/Down arrows
+  const elevSpeed = 0.8;    // rad/sec      <- W/S keys
+
+  if (keysDown['ArrowLeft'])  camState.azimuth -= orbitSpeed * dt;
+  if (keysDown['ArrowRight']) camState.azimuth += orbitSpeed * dt;
+  if (keysDown['ArrowUp'])    camState.distance -= zoomSpeed * dt;
+  if (keysDown['ArrowDown'])  camState.distance += zoomSpeed * dt;
+  if (keysDown['KeyW'])       camState.elevation += elevSpeed * dt;
+  if (keysDown['KeyS'])       camState.elevation -= elevSpeed * dt;
+
+  camState.distance = Math.min(CAM_MAX_DIST, Math.max(CAM_MIN_DIST, camState.distance));
+  camState.elevation = Math.min(CAM_MAX_ELEV, Math.max(CAM_MIN_ELEV, camState.elevation));
+}
+
+function applyCamera(targetPos) {
+  const { distance, azimuth, elevation } = camState;
+  const horiz = distance * Math.cos(elevation);
+  const offsetX = horiz * Math.cos(azimuth);
+  const offsetZ = horiz * Math.sin(azimuth);
+  const offsetY = distance * Math.sin(elevation);
+
+  camera.position.set(
+    targetPos.x + offsetX,
+    targetPos.y + offsetY,
+    targetPos.z + offsetZ
+  );
+  camera.lookAt(targetPos.x, targetPos.y + 0.3, targetPos.z);
+}
+
+// ---------------- Physics wiring ----------------
+
+// UI elements
+const speedSlider = document.getElementById('speedSlider');
+const launchSlider = document.getElementById('launchSlider');
+const azimuthSlider = document.getElementById('azimuthSlider');
+const spinSlider = document.getElementById('spinSlider');
+const sidespinSlider = document.getElementById('sidespinSlider');
+const speedVal = document.getElementById('speedVal');
+const launchVal = document.getElementById('launchVal');
+const azimuthVal = document.getElementById('azimuthVal');
+const spinVal = document.getElementById('spinVal');
+const sidespinVal = document.getElementById('sidespinVal');
+
+[
+  [speedSlider, speedVal], [launchSlider, launchVal], [azimuthSlider, azimuthVal],
+  [spinSlider, spinVal], [sidespinSlider, sidespinVal],
+].forEach(([slider, label]) => {
+  slider.addEventListener('input', () => (label.textContent = slider.value));
+});
+
+const rpmToRadPerSec = (rpm) => rpm * (2 * Math.PI) / 60; // Section 2.7 of the study
+
+/**
+ * Builds an initial state from the current slider values.
+ *  - speed + launch angle (vertical) + azimuth (horizontal direction) -> velocity vector
+ *  - backspin -> rotation axis is horizontal, perpendicular to travel direction (Z-ish here
+ *    since default travel is along +X) -> this is what curves the ball UP via Magnus lift
+ *  - sidespin -> rotation axis is vertical (Y) -> this is what curves the ball LEFT/RIGHT
+ */
+function buildStateFromControls() {
+  const speed = parseFloat(speedSlider.value);
+  const launchDeg = parseFloat(launchSlider.value);
+  const azimuthDeg = parseFloat(azimuthSlider.value);
+  const backspinRpm = parseFloat(spinSlider.value);
+  const sidespinRpm = parseFloat(sidespinSlider.value);
+
+  const launchRad = (launchDeg * Math.PI) / 180;
+  const azimuthRad = (azimuthDeg * Math.PI) / 180;
+
+  // Velocity: start facing +X, rotate up by launch angle, then rotate
+  // around vertical (Y) axis by azimuth to aim left/right in 3D.
+  const horizSpeed = speed * Math.cos(launchRad);
+  const vx0 = horizSpeed * Math.cos(azimuthRad);
+  const vz0 = horizSpeed * Math.sin(azimuthRad);
+  const vy0 = speed * Math.sin(launchRad);
+
+  // Spin axes: backspin axis must stay perpendicular to whichever direction
+  // we're hitting (so it always lifts, not sideways-curves), so rotate it
+  // by azimuth too. Sidespin is always about the vertical (Y) axis.
+  const backspinMag = rpmToRadPerSec(backspinRpm);
+  const sidespinMag = rpmToRadPerSec(sidespinRpm);
+  // axis perpendicular to travel direction & to Y, pointing so backspin lifts: (0,0,-1) rotated by azimuth
+  const omegaX = backspinMag * Math.sin(azimuthRad);
+  const omegaZ = -backspinMag * Math.cos(azimuthRad);
+
+  return createInitialState({
+    position: { x: 0, y: 0.05, z: 0 },
+    velocity: { x: vx0, y: vy0, z: vz0 },
+    angularVelocity: { x: omegaX, y: sidespinMag, z: omegaZ },
+  });
+}
+
+let physicsState = buildStateFromControls();
+
+function resetShot() {
+  physicsState = buildStateFromControls();
+  trailPoints.length = 0;
+}
+document.getElementById('hitBtn').addEventListener('click', resetShot);
+
+const clock = new THREE.Clock();
+const FIXED_DT = 1 / 60; // fixed timestep keeps physics deterministic regardless of fps
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  // Fixed-timestep update (recommended for physics): accumulate real time,
+  // step the simulation in fixed chunks.
+  const frameTime = Math.min(clock.getDelta(), 0.05);
+  let accumulator = frameTime;
+  while (accumulator >= FIXED_DT) {
+    step(physicsState, FIXED_DT, { getGroundHeight });
+    accumulator -= FIXED_DT;
+  }
+
+  // Sync mesh to physics state
+  const { x, y, z } = physicsState.position;
+  ballMesh.position.set(x, y + ballRadius, z);
+
+  // Camera follows the ball; arrow keys / W/S adjust the orbit
+  updateCameraFromKeys(frameTime);
+  applyCamera(ballMesh.position);
+
+  // crude visual spin (not physically exact rolling rotation, just for feel)
+  ballMesh.rotation.x += physicsState.angularVelocity.z * FIXED_DT * 0.05;
+  ballMesh.rotation.z -= physicsState.angularVelocity.x * FIXED_DT * 0.05;
+
+  // trail
+  trailPoints.push(new THREE.Vector3(x, y + 0.01, z));
+  if (trailPoints.length > 500) trailPoints.shift();
+  trailGeo.setFromPoints(trailPoints);
+
+  // HUD
+  document.getElementById('phase').textContent = physicsState.phase;
+  document.getElementById('pos').textContent =
+    `${x.toFixed(1)}, ${y.toFixed(2)}, ${z.toFixed(1)}`;
+  const speed = Math.hypot(physicsState.velocity.x, physicsState.velocity.y, physicsState.velocity.z);
+  document.getElementById('speed').textContent = speed.toFixed(1);
+
+  renderer.render(scene, camera);
+}
+animate();
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>
