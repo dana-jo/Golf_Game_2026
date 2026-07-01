@@ -49,10 +49,10 @@ export async function loadObjects(scene) {
   console.log('Loading models...')
 
   // ── Ball ────────────────────────────────────────────────
-  const ball = await loadModel('/models/golf_ball.glb')
+  const ball = await loadModel('/models/golf_ball_low_poly.glb')
   scaleToSize(ball, BALL_R * 2)   // BALL_R * 2 = diameter     
   console.log('Ball scale after fix:', ball.scale.x)
-  ball.position.set(0, 1.23, 0)     // sit on ground surface
+  ball.position.set(0, 10, 0)     // sit on ground surface
   ball.traverse((child) => {
     if (child.isMesh) {
       child.castShadow    = true
@@ -64,7 +64,7 @@ export async function loadObjects(scene) {
   console.log('Ball loaded')
 
   // ── Course ──────────────────────────────────────────────
-  const course = await loadModel('/models/course.glb')
+  const course = await loadModel('/models/flat_ground_1.glb')
   course.scale.setScalar(11)
   course.position.set(0, 0, 0)
   course.traverse((child) => {
