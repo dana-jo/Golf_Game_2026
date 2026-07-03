@@ -52,7 +52,7 @@ export async function loadObjects(scene) {
   const ball = await loadModel('/models/golf_ball_low_poly.glb')
   scaleToSize(ball, BALL_R * 2)   // BALL_R * 2 = diameter     
   console.log('Ball scale after fix:', ball.scale.x)
-  ball.position.set(0, 10, 0)     // sit on ground surface
+  ball.position.set(-9.2, 10,0.7)     // sit on ground surface
   ball.traverse((child) => {
     if (child.isMesh) {
       child.castShadow    = true
@@ -62,11 +62,101 @@ export async function loadObjects(scene) {
   ball.name = 'ball'
   scene.add(ball)
   console.log('Ball loaded')
+  
+  const golf_car = await loadModel('/models/golf_environment/golf_car.glb')
+  golf_car.scale.setScalar(11)
+  golf_car.traverse((child) => {
+    if (child.isMesh) {
+      child.castShadow    = false
+      child.receiveShadow = true
+      console.log(`Course mesh: ${child.name}`)
+    }
+  })
+  golf_car.name = 'golf_car'
+  scene.add(golf_car)
+  console.log('Golf car loaded')
 
-  // ── Course ──────────────────────────────────────────────
-  const course = await loadModel('/models/flat_ground_1.glb')
+const golf_tree_1 = await loadModel('/models/golf_environment/golf_tree_1.glb')
+  golf_tree_1.scale.setScalar(11)
+  golf_tree_1.traverse((child) => {
+    if (child.isMesh) {
+      child.castShadow    = false
+      child.receiveShadow = true
+      console.log(`Course mesh: ${child.name}`)
+    }
+  })
+  golf_tree_1.name = 'golf_tree_1'
+  scene.add(golf_tree_1)
+  console.log('Golf tree 1 loaded')
+
+const golf_tree_2 = await loadModel('/models/golf_environment/golf_tree_2.glb')
+  golf_tree_2.scale.setScalar(11)
+  golf_tree_2.traverse((child) => {
+    if (child.isMesh) {
+      child.castShadow    = false
+      child.receiveShadow = true
+      console.log(`Course mesh: ${child.name}`)
+    }
+  })
+  golf_tree_2.name = 'golf_tree_2'
+  scene.add(golf_tree_2)
+  console.log('Golf tree 2 loaded')
+
+const golf_tree_3 = await loadModel('/models/golf_environment/golf_tree_3.glb')
+  golf_tree_3.scale.setScalar(11)
+  golf_tree_3.traverse((child) => {
+    if (child.isMesh) {
+      child.castShadow    = false
+      child.receiveShadow = true
+      console.log(`Course mesh: ${child.name}`)
+    }
+  })
+  golf_tree_3.name = 'golf_tree_3'
+  scene.add(golf_tree_3)
+  console.log('Golf tree 3 loaded')
+
+const golf_tree_4 = await loadModel('/models/golf_environment/golf_tree_4.glb')
+  golf_tree_4.scale.setScalar(11)
+  golf_tree_4.traverse((child) => {
+    if (child.isMesh) {
+      child.castShadow    = false
+      child.receiveShadow = true
+      console.log(`Course mesh: ${child.name}`)
+    }
+  })
+  golf_tree_4.name = 'golf_tree_4'
+  scene.add(golf_tree_4)
+  console.log('Golf tree 4 loaded')
+
+const ground_water = await loadModel('/models/golf_environment/ground_water.glb')
+  ground_water.scale.setScalar(11)
+  ground_water.traverse((child) => {
+    if (child.isMesh) {
+      child.castShadow    = false
+      child.receiveShadow = true
+      console.log(`Course mesh: ${child.name}`)
+    }
+  })
+  ground_water.name = 'ground_water'
+  scene.add(ground_water)
+  console.log('Ground water loaded')
+
+const red_flag = await loadModel('/models/golf_environment/red_flag.glb')
+  red_flag.scale.setScalar(11)
+  red_flag.traverse((child) => {
+    if (child.isMesh) {
+      child.castShadow    = false
+      child.receiveShadow = true
+      console.log(`Course mesh: ${child.name}`)
+    }
+  })
+  red_flag.name = 'red_flag'
+  scene.add(red_flag)
+  console.log('Red flag loaded')
+
+
+const course = await loadModel('/models/golf_environment/ground_with_holder.glb')
   course.scale.setScalar(11)
-  course.position.set(0, 0, 0)
   course.traverse((child) => {
     if (child.isMesh) {
       child.castShadow    = false
@@ -76,8 +166,7 @@ export async function loadObjects(scene) {
   })
   course.name = 'course'
   scene.add(course)
-  console.log('Course loaded')
-
+  console.log('Course loaded')  
 //   // ── Hole ────────────────────────────────────────────────
 //   const hole = await loadModel('/models/hole.glb')
 //   hole.scale.setScalar(0.5)
