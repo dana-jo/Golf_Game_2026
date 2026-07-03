@@ -42,6 +42,22 @@ export function initScene() {
   const controls = new OrbitControls(camera, renderer.domElement)
   controls.enableDamping = true
   controls.dampingFactor = 0.05
+  controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE
+  controls.mouseButtons.MIDDLE = THREE.MOUSE.DOLLY
+  controls.mouseButtons.RIGHT = null
+
+  renderer.domElement.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0) return
+    controls.mouseButtons.LEFT = event.shiftKey ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE
+  })
+
+  renderer.domElement.addEventListener('pointerup', () => {
+    controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE
+  })
+
+  renderer.domElement.addEventListener('pointercancel', () => {
+    controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE
+  })
 
   // ── Resize handler ───────────────────────────────────────
   window.addEventListener('resize', () => {

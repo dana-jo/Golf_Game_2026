@@ -2,7 +2,8 @@ import * as THREE from 'three'
 import { initScene } from './scene.js'
 import { loadObjects } from './objects.js'
 import { createGroundHeightQuery } from './groundHeight.js'
-import { createShotControls } from './ui.js'
+import { createMouseShotInput } from './input.js'
+import { createTrajectoryPrediction } from './trajectoryPrediction.js'
 import { createInitialState, step, BALL_CONSTANTS } from './physics/index.js'
 
 const { scene, camera, renderer, controls } = initScene()
@@ -17,6 +18,7 @@ async function init() {
   box.getSize(size)
   const ballHalfWidth = Math.max(size.x, size.z) / 2
   const getGroundHeightAt = createGroundHeightQuery(course, ballHalfWidth)
+  const getPredictionGroundHeight = (x, z) => getGroundHeightAt(x, z) ?? 0
 
   const R = BALL_CONSTANTS.R
 
@@ -28,14 +30,48 @@ async function init() {
     angularVelocity: { x: 0, y: 0, z: 0 },
   })
 
-  // shot panel
-  const { getShotParams } = createShotControls(() => {
-    const { velocity, angularVelocity } = getShotParams()
+  function launchBall({ velocity, angularVelocity }) {
     physicsState = createInitialState({
       position: { ...physicsState.position },
       velocity,
       angularVelocity,
     })
+  }
+
+  const trajectoryPrediction = createTrajectoryPrediction(scene)
+  let pendingAimShot = null
+  let predictionFrame = 0
+
+  function scheduleTrajectoryPrediction(shotParams) {
+    pendingAimShot = shotParams
+    if (predictionFrame) return
+
+    predictionFrame = requestAnimationFrame(() => {
+      predictionFrame = 0
+      trajectoryPrediction.update({
+        startPosition: physicsState.position,
+        shotParams: pendingAimShot,
+        getGroundHeight: getPredictionGroundHeight,
+      })
+    })
+  }
+
+  function clearTrajectoryPrediction() {
+    pendingAimShot = null
+    if (predictionFrame) {
+      cancelAnimationFrame(predictionFrame)
+      predictionFrame = 0
+    }
+    trajectoryPrediction.clear()
+  }
+
+  createMouseShotInput({
+    canvas: renderer.domElement,
+    camera,
+    controls,
+    onAim: scheduleTrajectoryPrediction,
+    onAimEnd: clearTrajectoryPrediction,
+    onLaunch: launchBall,
   })
 
   // Debug
