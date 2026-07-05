@@ -4,9 +4,12 @@ import { loadObjects } from './objects.js'
 import { createGroundHeightQuery } from './groundHeight.js'
 import { createMouseShotInput } from './input.js'
 import { createTrajectoryPrediction } from './trajectoryPrediction.js'
-import { createInitialState, step, BALL_CONSTANTS } from './physics/index.js'
-
+import { createInitialState, step, BALL_CONSTANTS ,
+  PHASES, } from './physics/index.js'
+import { createGameLogic } from './gameLogic.js'
+import { createHUD } from './ui.js'
 const { scene, camera, renderer, controls } = initScene()
+//const hud = createHUD()
 
 async function init() {
   const { ball, course, club } = await loadObjects(scene)
@@ -21,6 +24,14 @@ async function init() {
   const getPredictionGroundHeight = (x, z) => getGroundHeightAt(x, z) ?? 0
 
   const R = BALL_CONSTANTS.R
+  //لبين مانزبط قصة الحفرة نورا تكتب
+  const gameLogic = createGameLogic({
+  holePosition: {
+    x: 15,
+    z: 5,
+  },
+  maxStrokes: 5,
+})
 
   // starting wherever the ball currently sits 
   const startGroundY = getGroundHeightAt(ball.position.x, ball.position.z) ?? 0
@@ -29,6 +40,22 @@ async function init() {
     velocity: { x: 0, y: 0, z: 0 },
     angularVelocity: { x: 0, y: 0, z: 0 },
   })
+  const startPosition = {
+  x: physicsState.position.x,
+  y: physicsState.position.y,
+  z: physicsState.position.z,
+}
+const hud = createHUD({
+  onRestart: () => {
+    gameLogic.resetGame()
+    hud.reset()
+    physicsState = createInitialState({
+      position: { ...startPosition },
+      velocity: { x: 0, y: 0, z: 0 },
+      angularVelocity: { x: 0, y: 0, z: 0 },
+    })
+  }
+})
 
   function launchBall({ velocity, angularVelocity }) {
     physicsState = createInitialState({
@@ -71,7 +98,18 @@ async function init() {
     controls,
     onAim: scheduleTrajectoryPrediction,
     onAimEnd: clearTrajectoryPrediction,
-    onLaunch: launchBall,
+    onLaunch: (shotParams) => {
+
+  if (!gameLogic.canShoot()) {
+    return
+  }
+
+  gameLogic.incrementStrokes()
+  hud.updateStrokes(gameLogic.getStrokes())
+  gameLogic.lockShot()
+
+  launchBall(shotParams)
+},
   })
 
   // Debug
@@ -90,7 +128,7 @@ async function init() {
   // timestep
   const clock = new THREE.Clock()
   const FIXED_DT = 1 / 60
-
+let previousPhase = physicsState.phase
   function animate() {
     requestAnimationFrame(animate)
     controls.update()
@@ -100,6 +138,31 @@ async function init() {
     while (accumulator >= FIXED_DT) {
       step(physicsState, FIXED_DT, { getGroundHeight: getGroundHeightSafe })
       accumulator -= FIXED_DT
+
+
+const currentPhase = physicsState.phase
+
+if (
+  previousPhase !== currentPhase &&
+  currentPhase === PHASES.STOPPED
+) {
+ 
+
+   if (gameLogic.checkWin(physicsState.position)) {
+    gameLogic.setWon()
+    hud.showWin()
+  }
+  else if (gameLogic.checkLose()) {
+    gameLogic.setLost()
+    hud.showLose()
+  }
+  else {
+  gameLogic.unlockShot()
+}}
+
+previousPhase = currentPhase
+
+
     }
 
     ball.position.set(

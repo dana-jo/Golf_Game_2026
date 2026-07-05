@@ -82,3 +82,82 @@ export function createShotControls(onHit) {
 
   return { getShotParams }
 }
+export function createHUD({ onRestart } = {}) {
+  const strokes = document.createElement('div')
+  const message = document.createElement('div')
+const restartBtn = document.createElement('button')
+  Object.assign(strokes.style, {
+    position: 'fixed',
+    top: '20px',
+    left: '20px',
+    color: '#fff',
+    fontFamily: 'monospace',
+    fontSize: '20px',
+    zIndex: 20,
+  })
+
+  Object.assign(message.style, {
+    position: 'fixed',
+    top: '50%',
+    left: '50%',
+    transform: 'translate(-50%, -50%)',
+    color: '#ffd54f',
+    fontFamily: 'monospace',
+    fontSize: '42px',
+    fontWeight: 'bold',
+    display: 'none',
+    zIndex: 30,
+  })
+  Object.assign(restartBtn.style, {
+    position: 'fixed',
+    bottom: '20px',
+    right: '20px',
+    padding: '10px 14px',
+    fontFamily: 'monospace',
+    fontSize: '14px',
+    cursor: 'pointer',
+    zIndex: 40,
+  })
+restartBtn.textContent = 'Restart'
+ restartBtn.addEventListener('click', () => {
+    if (onRestart) onRestart()
+  })
+
+  document.body.appendChild(strokes)
+  document.body.appendChild(message)
+document.body.appendChild(restartBtn)
+  function updateStrokes(value) {
+    strokes.textContent = `Strokes: ${value}`
+  }
+
+  function showWin() {
+    message.style.display = 'block'
+    message.textContent = 'You Win!'
+  }
+
+  function showLose() {
+    message.style.display = 'block'
+    message.textContent = ' Game Over!'
+  }
+
+  function hideMessage() {
+    message.style.display = 'none'
+  }
+
+  function reset() {
+    hideMessage()
+    updateStrokes(0)
+  }
+
+  updateStrokes(0)
+
+  return {
+    updateStrokes,
+    showWin,
+    showLose,
+    hideMessage,
+    reset,
+  }
+}
+
+
