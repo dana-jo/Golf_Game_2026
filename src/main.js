@@ -4,59 +4,127 @@ import { loadObjects } from './objects.js'
 import { createGroundHeightQuery } from './groundHeight.js'
 import { createMouseShotInput } from './input.js'
 import { createTrajectoryPrediction } from './trajectoryPrediction.js'
-import { createInitialState, step, BALL_CONSTANTS ,
+import { createInitialState, step, BALL_CONSTANTS,
   PHASES, estimateGroundNormal, } from './physics/index.js'
 import { createGameLogic } from './gameLogic.js'
 import { createHUD } from './ui.js'
 import { createDebugOverlay } from './debugOverlay.js'
+import { createHazardChecks, getWorldXZ, getMeshBoundsY } from './hazards.js'
+
 const { scene, camera, renderer, controls } = initScene()
-//const hud = createHUD()
+
+const SINK_DURATION = 1.4
+const SINK_SPEED = 1.8
 
 async function init() {
-  const { ball, course, club } = await loadObjects(scene)
+  const { ball, course, ground_water, red_flag } = await loadObjects(scene)
   window.ball = ball
 
-  // Ground height
   const box = new THREE.Box3().setFromObject(ball)
   const size = new THREE.Vector3()
   box.getSize(size)
   const ballHalfWidth = Math.max(size.x, size.z) / 2
   const getGroundHeightAt = createGroundHeightQuery(course, ballHalfWidth)
+  const getGroundHeightPhysics = (x, z) => getGroundHeightAt(x, z)
   const getPredictionGroundHeight = (x, z) => getGroundHeightAt(x, z) ?? 0
 
-  const R = BALL_CONSTANTS.R
-  //لبين مانزبط قصة الحفرة نورا تكتب
-  const gameLogic = createGameLogic({
-  holePosition: {
-    x: 15,
-    z: 5,
-  },
-  maxStrokes: 5,
-})
+  const holeXZ = getWorldXZ(red_flag)
+  const courseBounds = getMeshBoundsY(course)
 
-  // starting wherever the ball currently sits 
+  const hazards = createHazardChecks({
+    courseMesh: course,
+    waterMesh: ground_water,
+    holePosition: holeXZ,
+    getCourseGround: getGroundHeightPhysics,
+    outOfBoundsY: courseBounds.minY - 3,
+  })
+
+  const gameLogic = createGameLogic({
+    holePosition: holeXZ,
+    maxStrokes: 5,
+  })
+
   const startGroundY = getGroundHeightAt(ball.position.x, ball.position.z) ?? 0
   let physicsState = createInitialState({
     position: { x: ball.position.x, y: startGroundY, z: ball.position.z },
     velocity: { x: 0, y: 0, z: 0 },
     angularVelocity: { x: 0, y: 0, z: 0 },
   })
-  const startPosition = {
-  x: physicsState.position.x,
-  y: physicsState.position.y,
-  z: physicsState.position.z,
-}
-const hud = createHUD({
-  onRestart: () => {
-    gameLogic.resetGame()
-    hud.reset()
-    physicsState = createInitialState({
-      position: { ...startPosition },
-      velocity: { x: 0, y: 0, z: 0 },
-      angularVelocity: { x: 0, y: 0, z: 0 },
-    })
+  const startPosition = { ...physicsState.position }
+
+  let sinkState = null
+
+  const hud = createHUD({
+    onRestart: () => {
+      gameLogic.resetGame()
+      hud.reset()
+      sinkState = null
+      ball.visible = true
+      physicsState = createInitialState({
+        position: { ...startPosition },
+        velocity: { x: 0, y: 0, z: 0 },
+        angularVelocity: { x: 0, y: 0, z: 0 },
+      })
+    },
+  })
+
+  function freezeBall() {
+    physicsState.velocity = { x: 0, y: 0, z: 0 }
+    physicsState.angularVelocity = { x: 0, y: 0, z: 0 }
+    physicsState.phase = PHASES.STOPPED
   }
-})
+
+  function captureInHole() {
+    hazards.snapPositionToHole(physicsState.position)
+    freezeBall()
+    gameLogic.setWon()
+    hud.showWin()
+  }
+
+  function beginWaterSink() {
+    freezeBall()
+    sinkState = {
+      elapsed: 0,
+      waterY: hazards.getWaterHeight(physicsState.position.x, physicsState.position.z),
+    }
+  }
+
+  function handleStrokeLimitLose() {
+    freezeBall()
+    gameLogic.setLost('strokes')
+    hud.showLose('strokes')
+  }
+
+  function handleOutOfBoundsLose() {
+    freezeBall()
+    gameLogic.setLost('oob')
+    hud.showLose('oob')
+  }
+
+  function finishWaterSink() {
+    sinkState = null
+    ball.visible = false
+    gameLogic.setLost('water')
+    hud.showLose('water')
+  }
+
+  function evaluateHazards() {
+    if (!gameLogic.isPlaying() || sinkState) return
+
+    if (hazards.checkHole(physicsState)) {
+      captureInHole()
+      return
+    }
+
+    if (hazards.checkWater(physicsState)) {
+      beginWaterSink()
+      return
+    }
+
+    if (hazards.checkOutOfBounds(physicsState)) {
+      handleOutOfBoundsLose()
+    }
+  }
 
   function launchBall({ velocity, angularVelocity }) {
     physicsState = createInitialState({
@@ -100,80 +168,73 @@ const hud = createHUD({
     onAim: scheduleTrajectoryPrediction,
     onAimEnd: clearTrajectoryPrediction,
     onLaunch: (shotParams) => {
+      if (!gameLogic.canShoot()) return
 
-  if (!gameLogic.canShoot()) {
-    return
-  }
-
-  gameLogic.incrementStrokes()
-  hud.updateStrokes(gameLogic.getStrokes())
-  gameLogic.lockShot()
-
-  launchBall(shotParams)
-},
+      gameLogic.incrementStrokes()
+      hud.updateStrokes(gameLogic.getStrokes())
+      gameLogic.lockShot()
+      launchBall(shotParams)
+    },
   })
 
-  // Debug
   window.addEventListener('keydown', (e) => {
     if (e.code === 'KeyD') {
-      console.log('=== Model debug ===')
-      console.log('Ball scale:', ball.scale)
-      console.log('Ball pos:', ball.position)
-      console.log('Course scale:', course.scale)
-      console.log('Physics state:', physicsState)
+      console.log('Hole:', holeXZ, 'Physics:', physicsState)
     }
   })
 
-  // Debug overlay: press 'N' to toggle the ground-normal / velocity arrows
-  // Cyan arrow = ground normal ,Yellow = ball velocity
   const debugOverlay = createDebugOverlay(scene)
   window.addEventListener('keydown', (e) => {
     if (e.code === 'KeyN') {
       debugOverlay.setVisible(!debugOverlay.isVisible())
-      console.log('Debug overlay:', debugOverlay.isVisible() ? 'ON' : 'OFF')
     }
   })
 
   const getGroundHeightSafe = safeGroundHeight(getGroundHeightAt)
+  const R = BALL_CONSTANTS.R
 
-  // timestep
   const clock = new THREE.Clock()
   const FIXED_DT = 1 / 60
-let previousPhase = physicsState.phase
+  let previousPhase = physicsState.phase
+
   function animate() {
     requestAnimationFrame(animate)
     controls.update()
 
     const frameTime = Math.min(clock.getDelta(), 0.05)
     let accumulator = frameTime
+
     while (accumulator >= FIXED_DT) {
-      step(physicsState, FIXED_DT, { getGroundHeight: getGroundHeightSafe })
+      if (sinkState) {
+        sinkState.elapsed += FIXED_DT
+        physicsState.position.y -= SINK_SPEED * FIXED_DT
+        if (sinkState.elapsed >= SINK_DURATION) {
+          finishWaterSink()
+        }
+      } else if (gameLogic.isPlaying()) {
+        step(physicsState, FIXED_DT, { getGroundHeight: getGroundHeightPhysics })
+        evaluateHazards()
+
+        const currentPhase = physicsState.phase
+
+        if (
+          gameLogic.isPlaying() &&
+          previousPhase !== currentPhase &&
+          currentPhase === PHASES.STOPPED
+        ) {
+          if (hazards.checkHole(physicsState)) {
+            captureInHole()
+          } else if (gameLogic.checkStrokeLimit()) {
+            handleStrokeLimitLose()
+          } else {
+            gameLogic.unlockShot()
+          }
+        }
+
+        previousPhase = physicsState.phase
+      }
+
       accumulator -= FIXED_DT
-
-
-const currentPhase = physicsState.phase
-
-if (
-  previousPhase !== currentPhase &&
-  currentPhase === PHASES.STOPPED
-) {
- 
-
-   if (gameLogic.checkWin(physicsState.position)) {
-    gameLogic.setWon()
-    hud.showWin()
-  }
-  else if (gameLogic.checkLose()) {
-    gameLogic.setLost()
-    hud.showLose()
-  }
-  else {
-  gameLogic.unlockShot()
-}}
-
-previousPhase = currentPhase
-
-
     }
 
     ball.position.set(
@@ -197,9 +258,9 @@ previousPhase = currentPhase
 
     renderer.render(scene, camera)
   }
+
   animate()
 }
-
 
 function safeGroundHeight(getGroundHeightAt) {
   let lastKnown = 0

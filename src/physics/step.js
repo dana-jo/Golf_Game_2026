@@ -21,11 +21,21 @@ export function step(state, dt, options = {}) {
     }
     case PHASES.SLIDING: {
       const groundY = getGroundHeight(state.position.x, state.position.z);
+      if (groundY === null) {
+        state.phase = PHASES.FLIGHT;
+        stepFlight(state, dt, ball, world, physics);
+        break;
+      }
       stepSliding(state, dt, groundY, ball, world, physics , getGroundHeight);
       break;
     }
     case PHASES.ROLLING: {
       const groundY = getGroundHeight(state.position.x, state.position.z);
+      if (groundY === null) {
+        state.phase = PHASES.FLIGHT;
+        stepFlight(state, dt, ball, world, physics);
+        break;
+      }
       stepRolling(state, dt, groundY, ball, world, physics, getGroundHeight);
       break;
     }

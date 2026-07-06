@@ -1,7 +1,7 @@
 
 export const GRAVITY      = 9.81
 export const AIR_DENSITY  = 1.225
-export const DRAG_COEFF   = 0.47
+export const DRAG_COEFF   = 0.26  // dimpled ball, supercritical Re (~2e5)
 export const LIFT_COEFF   = 0.21
 export const SPIN_DECAY_COEFF = 0.005  // Ctau 
 export const BALL_RADIUS  = 0.0214     // metres

@@ -7,7 +7,7 @@ const MAX_LAUNCH = 80
 const MAX_DRAG_PIXELS = 360
 const WHEEL_LAUNCH_STEP = 2
 const AIM_BUTTON = 2
-const BACKSPIN_RPM = 350
+const BACKSPIN_RPM = 2800
 const SIDESPIN_RPM = 0
 
 const DEG_TO_RAD = Math.PI / 180
@@ -54,7 +54,7 @@ function buildShotParams(direction, speed, launchDeg) {
     angularVelocity: {
       x: direction.z * backspin,
       y: sidespin,
-      z: direction.x * backspin,
+      z: -direction.x * backspin,
     },
   }
 }

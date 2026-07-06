@@ -55,7 +55,7 @@ export function createShotControls(onHit) {
     const speed = read('speed')
     const launchDeg = read('launch')
     const azimuthDeg = read('azimuth')
-    const backspinRpm = 350 // read('backspin')
+    const backspinRpm = 2800 // read('backspin')
     const sidespinRpm = 0 // read('sidespin')
 
     const launchRad = (launchDeg * Math.PI) / 180
@@ -135,9 +135,14 @@ document.body.appendChild(restartBtn)
     message.textContent = 'You Win!'
   }
 
-  function showLose() {
+  function showLose(reason = 'strokes') {
     message.style.display = 'block'
-    message.textContent = ' Game Over!'
+    const messages = {
+      strokes: 'Game Over!',
+      water: 'Water Hazard!',
+      oob: 'Out of Bounds!',
+    }
+    message.textContent = messages[reason] ?? 'Game Over!'
   }
 
   function hideMessage() {

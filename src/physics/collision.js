@@ -6,6 +6,7 @@ export function flatGroundHeight(world = WORLD_CONSTANTS) {
 
 export function checkGroundCollision(state, getGroundHeight) {
   const groundY = getGroundHeight(state.position.x, state.position.z);
+  if (groundY === null) return { collided: false, groundY: null };
   const collided = state.position.y <= groundY && state.velocity.y < 0;
   return { collided, groundY };
 }

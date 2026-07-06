@@ -201,5 +201,5 @@ const course = await loadModel('/models/golf_environment/ground_with_holder.glb'
 //   const holePosition = new THREE.Vector3()
 //   hole.getWorldPosition(holePosition)
 
-  return { ball, course, club}
+  return { ball, course, club, ground_water, red_flag }
 }

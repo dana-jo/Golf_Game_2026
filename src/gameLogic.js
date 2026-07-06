@@ -2,26 +2,28 @@
 
 import { PHASES } from './physics/index.js'
 
-
 export function createGameLogic({
-    
-    
   holePosition,
   maxStrokes = 5,
-  
- winRadius = 0.5,
+  winRadius = 0.5,
 }) {
-    if (!holePosition) {
-  throw new Error('createGameLogic requires holePosition')
-}
+  if (!holePosition) {
+    throw new Error('createGameLogic requires holePosition')
+  }
+
   const state = {
     strokes: 0,
     canShootFlag: true,
     gameState: 'playing',
+    loseReason: null,
+  }
+
+  function isPlaying() {
+    return state.gameState === 'playing'
   }
 
   function canShoot() {
-    return state.canShootFlag
+    return state.canShootFlag && isPlaying()
   }
 
   function lockShot() {
@@ -29,7 +31,7 @@ export function createGameLogic({
   }
 
   function unlockShot() {
-    state.canShootFlag = true
+    if (isPlaying()) state.canShootFlag = true
   }
 
   function incrementStrokes() {
@@ -47,11 +49,10 @@ export function createGameLogic({
   function checkWin(ballPosition, targetHolePosition = holePosition) {
     const dx = ballPosition.x - targetHolePosition.x
     const dz = ballPosition.z - targetHolePosition.z
-
     return Math.hypot(dx, dz) < winRadius
   }
 
-  function checkLose(strokes = state.strokes) {
+  function checkStrokeLimit(strokes = state.strokes) {
     return strokes >= maxStrokes
   }
 
@@ -60,8 +61,9 @@ export function createGameLogic({
     state.canShootFlag = false
   }
 
-  function setLost() {
+  function setLost(reason = 'strokes') {
     state.gameState = 'lost'
+    state.loseReason = reason
     state.canShootFlag = false
   }
 
@@ -69,13 +71,19 @@ export function createGameLogic({
     return state.gameState
   }
 
+  function getLoseReason() {
+    return state.loseReason
+  }
+
   function resetGame() {
     state.strokes = 0
     state.canShootFlag = true
     state.gameState = 'playing'
+    state.loseReason = null
   }
 
   return {
+    isPlaying,
     canShoot,
     lockShot,
     unlockShot,
@@ -83,10 +91,11 @@ export function createGameLogic({
     getStrokes,
     isBallStopped,
     checkWin,
-    checkLose,
+    checkStrokeLimit,
     setWon,
     setLost,
     getGameState,
+    getLoseReason,
     resetGame,
   }
 }
