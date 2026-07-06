@@ -140,12 +140,14 @@ const hud = createHUD({
   const clock = new THREE.Clock()
   const FIXED_DT = 1 / 60
 let previousPhase = physicsState.phase
+let accumulator = 0
   function animate() {
     requestAnimationFrame(animate)
     controls.update()
 
     const frameTime = Math.min(clock.getDelta(), 0.05)
-    let accumulator = frameTime
+    //let accumulator = frameTime
+    accumulator += frameTime
     while (accumulator >= FIXED_DT) {
       step(physicsState, FIXED_DT, { getGroundHeight: getGroundHeightSafe })
       accumulator -= FIXED_DT
