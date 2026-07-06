@@ -17,3 +17,6 @@ export const normalize = (a) => {
   const len = length(a);
   return len < 1e-9 ? v3(0, 0, 0) : scale(a, 1 / len);
 };
+
+// Component of 'a' lying in the plane whose normal is 'n' (n must be a unit vector).
+export const projectOnPlane = (a, n) => sub(a, scale(n, dot(a, n)));

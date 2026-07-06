@@ -5,9 +5,10 @@ import { createGroundHeightQuery } from './groundHeight.js'
 import { createMouseShotInput } from './input.js'
 import { createTrajectoryPrediction } from './trajectoryPrediction.js'
 import { createInitialState, step, BALL_CONSTANTS ,
-  PHASES, } from './physics/index.js'
+  PHASES, estimateGroundNormal, } from './physics/index.js'
 import { createGameLogic } from './gameLogic.js'
 import { createHUD } from './ui.js'
+import { createDebugOverlay } from './debugOverlay.js'
 const { scene, camera, renderer, controls } = initScene()
 //const hud = createHUD()
 
@@ -123,6 +124,16 @@ const hud = createHUD({
     }
   })
 
+  // Debug overlay: press 'N' to toggle the ground-normal / velocity arrows
+  // Cyan arrow = ground normal ,Yellow = ball velocity
+  const debugOverlay = createDebugOverlay(scene)
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'KeyN') {
+      debugOverlay.setVisible(!debugOverlay.isVisible())
+      console.log('Debug overlay:', debugOverlay.isVisible() ? 'ON' : 'OFF')
+    }
+  })
+
   const getGroundHeightSafe = safeGroundHeight(getGroundHeightAt)
 
   // timestep
@@ -170,6 +181,19 @@ previousPhase = currentPhase
       physicsState.position.y + R,
       physicsState.position.z
     )
+
+    if (debugOverlay.isVisible()) {
+      const groundNormal = estimateGroundNormal(
+        getGroundHeightSafe,
+        physicsState.position.x,
+        physicsState.position.z
+      )
+      debugOverlay.update({
+        position: ball.position,
+        normal: groundNormal,
+        velocity: physicsState.velocity,
+      })
+    }
 
     renderer.render(scene, camera)
   }
