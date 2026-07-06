@@ -48,11 +48,45 @@ export function initScene() {
 
   const initialCameraPosition = camera.position.clone()
   const initialCameraTarget = new THREE.Vector3(0, 0, 0)
+  const followOffset = new THREE.Vector3()
+  let followEnabled = true
+  const FOLLOW_SMOOTHNESS = 10
+
+  function setFollowTarget(target) {
+    const nextTarget = target instanceof THREE.Vector3
+      ? target
+      : new THREE.Vector3(target.x, target.y, target.z)
+
+    const delta = new THREE.Vector3().subVectors(nextTarget, controls.target)
+    controls.target.copy(nextTarget)
+    camera.position.add(delta)
+
+    initialCameraTarget.copy(nextTarget)
+    initialCameraPosition.copy(camera.position)
+    followOffset.copy(camera.position).sub(controls.target)
+  }
+
+  function updateFollow(target, dt) {
+    if (!followEnabled) return
+
+    const desired = target instanceof THREE.Vector3
+      ? target
+      : new THREE.Vector3(target.x, target.y, target.z)
+
+    const alpha = 1 - Math.exp(-FOLLOW_SMOOTHNESS * dt)
+    const previousTarget = controls.target.clone()
+    controls.target.lerp(desired, alpha)
+    camera.position.add(controls.target.clone().sub(previousTarget))
+  }
 
   function resetCamera() {
-    camera.position.copy(initialCameraPosition)
     controls.target.copy(initialCameraTarget)
+    camera.position.copy(initialCameraTarget).add(followOffset)
     controls.update()
+  }
+
+  function setFollowEnabled(enabled) {
+    followEnabled = enabled
   }
 
   renderer.domElement.addEventListener('pointerdown', (event) => {
@@ -76,5 +110,5 @@ export function initScene() {
   })
 
   // ── Return everything the rest of the game needs ─────────
-  return { scene, camera, renderer, controls, resetCamera }
+  return { scene, camera, renderer, controls, resetCamera, setFollowTarget, updateFollow, setFollowEnabled }
 }

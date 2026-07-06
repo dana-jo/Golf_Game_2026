@@ -12,7 +12,7 @@ import { createHUD } from './ui.js'
 import { createDebugOverlay } from './debugOverlay.js'
 import { createHazardChecks, getWorldXZ, getMeshBoundsY } from './hazards.js'
 
-const { scene, camera, renderer, controls, resetCamera } = initScene()
+const { scene, camera, renderer, controls, resetCamera, setFollowTarget, updateFollow } = initScene()
 
 async function init() {
   const { ball, course, ground_water, red_flag } = await loadObjects(scene)
@@ -38,6 +38,9 @@ async function init() {
     outOfBoundsY: courseBounds.minY - 3,
   })
 
+  const constantsStore = createConstantsStore()
+  const getStepOptions = () => constantsStore.getStepOptions()
+
   const startGroundY = getGroundHeightAt(ball.position.x, ball.position.z) ?? 0
   const startPosition = {
     x: ball.position.x,
@@ -45,8 +48,12 @@ async function init() {
     z: ball.position.z,
   }
 
-  const constantsStore = createConstantsStore()
-  const getStepOptions = () => constantsStore.getStepOptions()
+  const ballRadius = constantsStore.getBallConstants().R
+  setFollowTarget(new THREE.Vector3(
+    startPosition.x,
+    startPosition.y + ballRadius,
+    startPosition.z,
+  ))
 
   const game = createGameController({
     hazards,
@@ -139,7 +146,6 @@ async function init() {
 
   function animate() {
     requestAnimationFrame(animate)
-    controls.update()
 
     const frameTime = Math.min(clock.getDelta(), 0.05)
     accumulator += frameTime
@@ -157,6 +163,9 @@ async function init() {
       physicsState.position.y + ballRadius,
       physicsState.position.z
     )
+
+    updateFollow(ball.position, frameTime)
+    controls.update()
 
     if (debugOverlay.isVisible()) {
       const groundNormal = estimateGroundNormal(
