@@ -26,9 +26,10 @@ export function createGameController({
     velocity: zeroMotion(),
     angularVelocity: zeroMotion(),
   })
+  physicsState.phase = PHASES.STOPPED
 
   let sinkState = null
-  let previousPhase = physicsState.phase
+  let previousPhase = PHASES.STOPPED
   let ballVisible = true
 
   const listeners = {
@@ -58,6 +59,7 @@ export function createGameController({
       velocity: zeroMotion(),
       angularVelocity: zeroMotion(),
     })
+    physicsState.phase = PHASES.STOPPED
     previousPhase = PHASES.STOPPED
     ballVisible = true
   }
@@ -107,10 +109,10 @@ export function createGameController({
     applyHazardPenalty('water')
   }
 
-  function evaluateHazards() {
+  function evaluateHazards(previousPosition) {
     if (!isPlaying() || sinkState) return
 
-    if (hazards.checkHole(physicsState)) {
+    if (hazards.checkHole(physicsState, previousPosition)) {
       handleWin()
       return
     }
@@ -180,13 +182,15 @@ export function createGameController({
 
       if (!isPlaying()) return
 
+      const previousPosition = { ...physicsState.position }
+
       step(physicsState, dt, {
         getGroundHeight,
-        shouldCaptureHole: (state) => hazards.checkHole(state),
+        shouldCaptureHole: (state) => hazards.checkHole(state, previousPosition),
         ...getStepOptions(),
       })
 
-      evaluateHazards()
+      evaluateHazards(previousPosition)
 
       const currentPhase = physicsState.phase
       if (

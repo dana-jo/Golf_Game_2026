@@ -158,9 +158,12 @@ const red_flag = await loadModel('/models/golf_environment/red_flag.glb')
   winning_cylinder.scale.setScalar(11)
   winning_cylinder.traverse((child) => {
     if (child.isMesh) {
-      child.castShadow    = false
-      child.receiveShadow = true
-      console.log(`Course mesh: ${child.name}`)
+      child.castShadow = false
+      child.receiveShadow = false
+      child.material = child.material.clone()
+      child.material.transparent = true
+      child.material.opacity = 0.35
+      child.material.depthWrite = false
     }
   })
   winning_cylinder.name = 'winning_cylinder'
@@ -213,5 +216,5 @@ const course = await loadModel('/models/golf_environment/ground_with_holder.glb'
 //   const holePosition = new THREE.Vector3()
 //   hole.getWorldPosition(holePosition)
 
-  return { ball, course, club, ground_water, red_flag }
+  return { ball, course, club, ground_water, winning_cylinder }
 }
