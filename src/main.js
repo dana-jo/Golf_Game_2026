@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { initScene } from './scene.js'
+import { initScene ,resetCamera} from './scene.js'
 import { loadObjects } from './objects.js'
 import { createGroundHeightQuery } from './groundHeight.js'
 import { createMouseShotInput } from './input.js'
@@ -74,6 +74,32 @@ async function init() {
     physicsState.phase = PHASES.STOPPED
   }
 
+  function resetBallToStart() {
+    physicsState = createInitialState({
+      position: { ...startPosition },
+      velocity: { x: 0, y: 0, z: 0 },
+      angularVelocity: { x: 0, y: 0, z: 0 },
+    })
+    previousPhase = PHASES.STOPPED
+    ball.visible = true
+  }
+
+  function applyHazardPenalty(reason) {
+    // gameLogic.incrementStrokes()
+    hud.updateStrokes(gameLogic.getStrokes())
+
+    if (gameLogic.checkStrokeLimit()) {
+      resetBallToStart()
+      gameLogic.setLost('strokes')
+      hud.showLose('strokes')
+      return
+    }
+
+    resetBallToStart()
+    gameLogic.unlockShot()
+    hud.showPenalty(reason)
+  }
+
   function captureInHole() {
     hazards.snapPositionToHole(physicsState.position)
     freezeBall()
@@ -95,17 +121,9 @@ async function init() {
     hud.showLose('strokes')
   }
 
-  function handleOutOfBoundsLose() {
-    freezeBall()
-    gameLogic.setLost('oob')
-    hud.showLose('oob')
-  }
-
   function finishWaterSink() {
     sinkState = null
-    ball.visible = false
-    gameLogic.setLost('water')
-    hud.showLose('water')
+    applyHazardPenalty('water')
   }
 
   function evaluateHazards() {
@@ -122,7 +140,8 @@ async function init() {
     }
 
     if (hazards.checkOutOfBounds(physicsState)) {
-      handleOutOfBoundsLose()
+      freezeBall()
+      applyHazardPenalty('oob')
     }
   }
 
@@ -209,6 +228,7 @@ let accumulator = 0
         sinkState.elapsed += FIXED_DT
         physicsState.position.y -= SINK_SPEED * FIXED_DT
         if (sinkState.elapsed >= SINK_DURATION) {
+          ball.visible = false
           finishWaterSink()
         }
       } else if (gameLogic.isPlaying()) {

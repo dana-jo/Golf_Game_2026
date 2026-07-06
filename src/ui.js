@@ -137,16 +137,35 @@ document.body.appendChild(restartBtn)
 
   function showLose(reason = 'strokes') {
     message.style.display = 'block'
-    const messages = {
-      strokes: 'Game Over!',
-      water: 'Water Hazard!',
-      oob: 'Out of Bounds!',
+    message.textContent = 'Game Over!'
+  }
+
+  let penaltyTimeout = null
+
+  function showPenalty(reason) {
+    const labels = {
+      water: 'Water hazard — +1 stroke',
+      oob: 'Out of bounds — +1 stroke',
     }
-    message.textContent = messages[reason] ?? 'Game Over!'
+    message.style.display = 'block'
+    message.style.fontSize = '28px'
+    message.textContent = labels[reason] ?? '+1 stroke'
+    if (penaltyTimeout) clearTimeout(penaltyTimeout)
+    penaltyTimeout = setTimeout(() => {
+      message.style.display = 'none'
+      message.style.fontSize = '42px'
+      penaltyTimeout = null
+    }, 1800)
   }
 
   function hideMessage() {
     message.style.display = 'none'
+    message.style.fontSize = '42px'
+    if (penaltyTimeout) {
+      clearTimeout(penaltyTimeout)
+      penaltyTimeout = null
+    }
+    resetCamera()
   }
 
   function reset() {
@@ -160,6 +179,7 @@ document.body.appendChild(restartBtn)
     updateStrokes,
     showWin,
     showLose,
+    showPenalty,
     hideMessage,
     reset,
   }

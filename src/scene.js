@@ -69,3 +69,8 @@ export function initScene() {
   // ── Return everything the rest of the game needs ─────────
   return { scene, camera, renderer, controls }
 }
+
+export function resetCamera() {
+  camera.position.set(0, 8, 16)
+  camera.lookAt(0, 0, 0)
+}
