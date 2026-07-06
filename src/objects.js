@@ -154,6 +154,18 @@ const red_flag = await loadModel('/models/golf_environment/red_flag.glb')
   scene.add(red_flag)
   console.log('Red flag loaded')
 
+  const winning_cylinder = await loadModel('/models/golf_environment/winning_cylinder.glb')
+  winning_cylinder.scale.setScalar(11)
+  winning_cylinder.traverse((child) => {
+    if (child.isMesh) {
+      child.castShadow    = false
+      child.receiveShadow = true
+      console.log(`Course mesh: ${child.name}`)
+    }
+  })
+  winning_cylinder.name = 'winning_cylinder'
+  scene.add(winning_cylinder)
+  console.log('Winning cylinder loaded')
 
 const course = await loadModel('/models/golf_environment/ground_with_holder.glb')
   course.scale.setScalar(11)
