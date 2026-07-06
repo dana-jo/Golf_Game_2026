@@ -10,12 +10,12 @@ import { estimateGroundNormal } from './physics/index.js'
 import { createGameController } from './gameLogic.js'
 import { createHUD } from './ui.js'
 import { createDebugOverlay } from './debugOverlay.js'
-import { createHazardChecks, getWorldXZ, getMeshBoundsY } from './hazards.js'
+import { createHazardChecks, getMeshBoundsY } from './hazards.js'
 
 const { scene, camera, renderer, controls, resetCamera, setFollowTarget, updateFollow } = initScene()
 
 async function init() {
-  const { ball, course, ground_water, red_flag } = await loadObjects(scene)
+  const { ball, course, ground_water, winning_cylinder } = await loadObjects(scene)
   window.ball = ball
 
   const box = new THREE.Box3().setFromObject(ball)
@@ -27,19 +27,22 @@ async function init() {
   const getPredictionGroundHeight = (x, z) => getGroundHeightAt(x, z) ?? 0
   const getGroundHeightSafe = safeGroundHeight(getGroundHeightAt)
 
-  const holeXZ = getWorldXZ(red_flag)
   const courseBounds = getMeshBoundsY(course)
-
-  const hazards = createHazardChecks({
-    courseMesh: course,
-    waterMesh: ground_water,
-    holePosition: holeXZ,
-    getCourseGround: getGroundHeightPhysics,
-    outOfBoundsY: courseBounds.minY - 3,
-  })
 
   const constantsStore = createConstantsStore()
   const getStepOptions = () => constantsStore.getStepOptions()
+
+  const hazards = createHazardChecks({
+    waterMesh: ground_water,
+    winMesh: winning_cylinder,
+    getCourseGround: getGroundHeightPhysics,
+    getBallRadius: () => ballHalfWidth,
+    outOfBoundsY: courseBounds.minY - 3,
+  })
+
+  winning_cylinder.updateWorldMatrix(true, true)
+  const winZoneBox = new THREE.Box3().setFromObject(winning_cylinder)
+  console.log('Win zone (world bounds):', winZoneBox.min, winZoneBox.max)
 
   const startGroundY = getGroundHeightAt(ball.position.x, ball.position.z) ?? 0
   const startPosition = {
@@ -48,10 +51,9 @@ async function init() {
     z: ball.position.z,
   }
 
-  const ballRadius = constantsStore.getBallConstants().R
   setFollowTarget(new THREE.Vector3(
     startPosition.x,
-    startPosition.y + ballRadius,
+    startPosition.y + ballHalfWidth,
     startPosition.z,
   ))
 
@@ -121,7 +123,18 @@ async function init() {
 
   window.addEventListener('keydown', (e) => {
     if (e.code === 'KeyD') {
-      console.log('Hole:', holeXZ, 'Physics:', game.getPhysicsState())
+      winning_cylinder.updateWorldMatrix(true, true)
+      const winBox = new THREE.Box3().setFromObject(winning_cylinder)
+      winBox.expandByScalar(ballHalfWidth)
+      const pos = game.getPhysicsState().position
+      const center = {
+        x: pos.x,
+        y: pos.y + ballHalfWidth,
+        z: pos.z,
+      }
+      console.log('Win zone:', winBox.min, winBox.max)
+      console.log('Ball bottom:', pos, 'Ball centre:', center)
+      console.log('Inside win zone:', winBox.containsPoint(new THREE.Vector3(center.x, center.y, center.z)))
     }
   })
 
@@ -156,7 +169,7 @@ async function init() {
     }
 
     const physicsState = game.getPhysicsState()
-    const ballRadius = constantsStore.getBallConstants().R
+    const ballRadius = ballHalfWidth
     ball.visible = game.isBallVisible()
     ball.position.set(
       physicsState.position.x,
