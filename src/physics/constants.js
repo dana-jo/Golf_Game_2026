@@ -1,40 +1,29 @@
-// if we want to edit constants , edit ../constants.js 
+// Fallback defaults for physics when step() is called without overrides.
+// Live tuning uses constantsStore.getStepOptions() from main.js.
 
-import {
-  GRAVITY,
-  AIR_DENSITY,
-  DRAG_COEFF,
-  LIFT_COEFF,
-  SPIN_DECAY_COEFF,
-  BALL_RADIUS,
-  BALL_MASS,
-  RESTITUTION,
-  FRICTION_K,
-  ROLLING_RESISTANCE,
-  STOP_SPEED,
-} from '../constants.js';
+import { DEFAULT_CONSTANTS } from '../constants.js';
 
 export const BALL_CONSTANTS = Object.freeze({
-  m: BALL_MASS,
-  R: BALL_RADIUS,
+  m: DEFAULT_CONSTANTS.BALL_MASS,
+  R: DEFAULT_CONSTANTS.BALL_RADIUS,
 });
 
 export const WORLD_CONSTANTS = Object.freeze({
-  g: GRAVITY,
-  rho: AIR_DENSITY,
-  groundY: 0,       
-  stopSpeed: STOP_SPEED,
+  g: DEFAULT_CONSTANTS.GRAVITY,
+  rho: DEFAULT_CONSTANTS.AIR_DENSITY,
+  groundY: 0,
+  stopSpeed: DEFAULT_CONSTANTS.STOP_SPEED,
 });
 
 export const PHYSICS_CONSTANTS = Object.freeze({
-  Cd: DRAG_COEFF,
-  Cl: LIFT_COEFF,
-  Ctau: SPIN_DECAY_COEFF,
-  e: RESTITUTION,
-  muK: FRICTION_K,
-  rollingResistance: ROLLING_RESISTANCE,
+  Cd: DEFAULT_CONSTANTS.DRAG_COEFF,
+  Cl: DEFAULT_CONSTANTS.LIFT_COEFF,
+  Ctau: DEFAULT_CONSTANTS.SPIN_DECAY_COEFF,
+  e: DEFAULT_CONSTANTS.RESTITUTION,
+  muK: DEFAULT_CONSTANTS.FRICTION_K,
+  rollingResistance: DEFAULT_CONSTANTS.ROLLING_RESISTANCE,
 });
 
-// Derived helpers 
+// Derived helpers
 export const ballArea = (R) => Math.PI * R * R;
 export const ballInertia = (m, R) => (2 / 5) * m * R * R;

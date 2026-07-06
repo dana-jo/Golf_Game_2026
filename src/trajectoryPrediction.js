@@ -1,9 +1,6 @@
 import * as THREE from 'three'
 import {
   createInitialState,
-  BALL_CONSTANTS,
-  WORLD_CONSTANTS,
-  PHYSICS_CONSTANTS,
 } from './physics/index.js'
 import { stepFlight } from './physics/flight.js'
 
@@ -75,10 +72,10 @@ export function createTrajectoryPrediction(scene) {
   marker.visible = false
   scene.add(marker)
 
-  function writePoint(index, point) {
+  function writePoint(index, point, ballRadius) {
     const offset = index * 3
     positions[offset] = point.x
-    positions[offset + 1] = point.y + BALL_CONSTANTS.R
+    positions[offset + 1] = point.y + ballRadius
     positions[offset + 2] = point.z
   }
 
@@ -88,7 +85,8 @@ export function createTrajectoryPrediction(scene) {
     geometry.setDrawRange(0, 0)
   }
 
-  function update({ startPosition, shotParams, getGroundHeight }) {
+  function update({ startPosition, shotParams, getGroundHeight, getStepOptions }) {
+    const { ball, world, physics } = getStepOptions()
     const state = createInitialState({
       position: cloneVector(startPosition),
       velocity: shotParams.velocity,
@@ -98,23 +96,23 @@ export function createTrajectoryPrediction(scene) {
     let pointCount = 0
     let previousPosition = cloneVector(state.position)
 
-    writePoint(pointCount, state.position)
+    writePoint(pointCount, state.position, ball.R)
     pointCount += 1
 
     const maxSteps = Math.ceil(MAX_TIME / PREDICT_DT)
     for (let stepIndex = 1; stepIndex <= maxSteps && pointCount < MAX_POINTS; stepIndex += 1) {
       previousPosition = cloneVector(state.position)
-      stepFlight(state, PREDICT_DT, BALL_CONSTANTS, WORLD_CONSTANTS, PHYSICS_CONSTANTS)
+      stepFlight(state, PREDICT_DT, ball, world, physics)
 
       if (stepIndex % RECORD_EVERY_STEPS === 0) {
-        writePoint(pointCount, state.position)
+        writePoint(pointCount, state.position, ball.R)
         pointCount += 1
       }
 
       if (crossedGround(state, getGroundHeight)) {
         const landing = refineLandingPoint(previousPosition, state.position, getGroundHeight)
-        writePoint(pointCount - 1, landing)
-        marker.position.set(landing.x, landing.y + 0.025, landing.z)
+        writePoint(pointCount - 1, landing, ball.R)
+        marker.position.set(landing.x, landing.y + ball.R, landing.z)
         marker.visible = true
         break
       }

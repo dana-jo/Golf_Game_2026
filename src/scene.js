@@ -46,6 +46,15 @@ export function initScene() {
   controls.mouseButtons.MIDDLE = THREE.MOUSE.DOLLY
   controls.mouseButtons.RIGHT = null
 
+  const initialCameraPosition = camera.position.clone()
+  const initialCameraTarget = new THREE.Vector3(0, 0, 0)
+
+  function resetCamera() {
+    camera.position.copy(initialCameraPosition)
+    controls.target.copy(initialCameraTarget)
+    controls.update()
+  }
+
   renderer.domElement.addEventListener('pointerdown', (event) => {
     if (event.button !== 0) return
     controls.mouseButtons.LEFT = event.shiftKey ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE
@@ -67,10 +76,5 @@ export function initScene() {
   })
 
   // ── Return everything the rest of the game needs ─────────
-  return { scene, camera, renderer, controls }
-}
-
-export function resetCamera() {
-  camera.position.set(0, 8, 16)
-  camera.lookAt(0, 0, 0)
+  return { scene, camera, renderer, controls, resetCamera }
 }

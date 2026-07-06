@@ -26,8 +26,9 @@ export function createHazardChecks({
   waterMesh,
   holePosition,
   getCourseGround,
-  cupRadius = 0.32,
-  captureSpeed = 6,
+  cupRadius = 0.38,
+  cupCatchAbove = 3.0,
+  cupCatchBelow = 0.25,
   lipClearance = 0.08,
   outOfBoundsY = -20,
 }) {
@@ -54,36 +55,16 @@ export function createHazardChecks({
     return position.y < outOfBoundsY
   }
 
-  function checkHole({ position, velocity, phase }) {
+  function checkHole({ position }) {
     const dx = position.x - holePosition.x
     const dz = position.z - holePosition.z
-    const dist = Math.hypot(dx, dz)
-    if (dist > cupRadius) return false
+    if (Math.hypot(dx, dz) > cupRadius) return false
 
-    const groundY = getHoleGroundY(position.x, position.z)
+    const groundY = getHoleGroundY(holePosition.x, holePosition.z)
     if (groundY === null) return false
 
-    const speed = Math.hypot(velocity.x, velocity.y, velocity.z)
-
-    // Slow enough to fall in, or already dropped below the lip
-    if (speed <= captureSpeed && position.y <= groundY + lipClearance) {
-      return true
-    }
-
-    if (position.y < groundY - 0.05) {
-      return true
-    }
-
-    // Rolling/sliding into the cup opening
-    if (
-      (phase === 'rolling' || phase === 'sliding') &&
-      dist < cupRadius * 0.75 &&
-      position.y <= groundY + lipClearance
-    ) {
-      return true
-    }
-
-    return false
+    const relY = position.y - groundY
+    return relY <= cupCatchAbove && relY >= -cupCatchBelow
   }
 
   function snapPositionToHole(position) {

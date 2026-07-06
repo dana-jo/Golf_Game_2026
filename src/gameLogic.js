@@ -1,101 +1,214 @@
-// gameLogic.js
+// Game rules, ball state, hazards, and physics orchestration.
 
-import { PHASES } from './physics/index.js'
+import { createInitialState, step, PHASES } from './physics/index.js'
 
-export function createGameLogic({
-  holePosition,
+const SINK_DURATION = 1.4
+const SINK_SPEED = 1.8
+
+const zeroMotion = () => ({ x: 0, y: 0, z: 0 })
+
+export function createGameController({
+  hazards,
+  startPosition,
+  getGroundHeight,
+  getStepOptions,
   maxStrokes = 5,
-  winRadius = 0.5,
 }) {
-  if (!holePosition) {
-    throw new Error('createGameLogic requires holePosition')
-  }
-
-  const state = {
+  const rules = {
     strokes: 0,
-    canShootFlag: true,
     gameState: 'playing',
+    canShoot: true,
     loseReason: null,
   }
 
+  let physicsState = createInitialState({
+    position: { ...startPosition },
+    velocity: zeroMotion(),
+    angularVelocity: zeroMotion(),
+  })
+
+  let sinkState = null
+  let previousPhase = physicsState.phase
+  let ballVisible = true
+
+  const listeners = {
+    onWin: null,
+    onLose: null,
+    onPenalty: null,
+    onStrokesChange: null,
+  }
+
+  function emit(event, ...args) {
+    listeners[event]?.(...args)
+  }
+
   function isPlaying() {
-    return state.gameState === 'playing'
+    return rules.gameState === 'playing'
   }
 
-  function canShoot() {
-    return state.canShootFlag && isPlaying()
+  function freezeBall() {
+    physicsState.velocity = zeroMotion()
+    physicsState.angularVelocity = zeroMotion()
+    physicsState.phase = PHASES.STOPPED
   }
 
-  function lockShot() {
-    state.canShootFlag = false
+  function resetBallToStart() {
+    physicsState = createInitialState({
+      position: { ...startPosition },
+      velocity: zeroMotion(),
+      angularVelocity: zeroMotion(),
+    })
+    previousPhase = PHASES.STOPPED
+    ballVisible = true
   }
 
-  function unlockShot() {
-    if (isPlaying()) state.canShootFlag = true
+  function handleWin() {
+    hazards.snapPositionToHole(physicsState.position)
+    freezeBall()
+    rules.gameState = 'won'
+    rules.canShoot = false
+    emit('onWin')
   }
 
-  function incrementStrokes() {
-    state.strokes++
+  function handleStrokeLimitLose() {
+    freezeBall()
+    rules.gameState = 'lost'
+    rules.loseReason = 'strokes'
+    rules.canShoot = false
+    emit('onLose', 'strokes')
   }
 
-  function getStrokes() {
-    return state.strokes
+  function applyHazardPenalty(reason) {
+    // rules.strokes++
+    emit('onStrokesChange', rules.strokes)
+
+    if (rules.strokes >= maxStrokes) {
+      resetBallToStart()
+      rules.gameState = 'lost'
+      rules.loseReason = 'strokes'
+      rules.canShoot = false
+      emit('onLose', 'strokes')
+      return
+    }
+
+    resetBallToStart()
+    rules.canShoot = true
+    emit('onPenalty', reason)
   }
 
-  function isBallStopped(physicsState) {
-    return physicsState.phase === PHASES.STOPPED
+  function beginWaterSink() {
+    freezeBall()
+    sinkState = { elapsed: 0 }
   }
 
-  function checkWin(ballPosition, targetHolePosition = holePosition) {
-    const dx = ballPosition.x - targetHolePosition.x
-    const dz = ballPosition.z - targetHolePosition.z
-    return Math.hypot(dx, dz) < winRadius
+  function finishWaterSink() {
+    sinkState = null
+    ballVisible = false
+    applyHazardPenalty('water')
   }
 
-  function checkStrokeLimit(strokes = state.strokes) {
-    return strokes >= maxStrokes
+  function evaluateHazards() {
+    if (!isPlaying() || sinkState) return
+
+    if (hazards.checkHole(physicsState)) {
+      handleWin()
+      return
+    }
+
+    if (hazards.checkWater(physicsState)) {
+      beginWaterSink()
+      return
+    }
+
+    if (hazards.checkOutOfBounds(physicsState)) {
+      freezeBall()
+      applyHazardPenalty('oob')
+    }
   }
 
-  function setWon() {
-    state.gameState = 'won'
-    state.canShootFlag = false
-  }
-
-  function setLost(reason = 'strokes') {
-    state.gameState = 'lost'
-    state.loseReason = reason
-    state.canShootFlag = false
-  }
-
-  function getGameState() {
-    return state.gameState
-  }
-
-  function getLoseReason() {
-    return state.loseReason
-  }
-
-  function resetGame() {
-    state.strokes = 0
-    state.canShootFlag = true
-    state.gameState = 'playing'
-    state.loseReason = null
+  function onBallStopped() {
+    if (hazards.checkHole(physicsState)) {
+      handleWin()
+    } else if (rules.strokes >= maxStrokes) {
+      handleStrokeLimitLose()
+    } else {
+      rules.canShoot = true
+    }
   }
 
   return {
+    setListeners(handlers) {
+      Object.assign(listeners, handlers)
+    },
+
+    getPhysicsState() {
+      return physicsState
+    },
+
+    getStrokes() {
+      return rules.strokes
+    },
+
     isPlaying,
-    canShoot,
-    lockShot,
-    unlockShot,
-    incrementStrokes,
-    getStrokes,
-    isBallStopped,
-    checkWin,
-    checkStrokeLimit,
-    setWon,
-    setLost,
-    getGameState,
-    getLoseReason,
-    resetGame,
+    canShoot: () => rules.canShoot && isPlaying(),
+    isBallVisible: () => ballVisible,
+
+    registerShot() {
+      rules.strokes++
+      emit('onStrokesChange', rules.strokes)
+      rules.canShoot = false
+    },
+
+    launchShot({ velocity, angularVelocity }) {
+      physicsState = createInitialState({
+        position: { ...physicsState.position },
+        velocity,
+        angularVelocity,
+      })
+      previousPhase = physicsState.phase
+    },
+
+    update(dt) {
+      if (sinkState) {
+        sinkState.elapsed += dt
+        physicsState.position.y -= SINK_SPEED * dt
+        if (sinkState.elapsed >= SINK_DURATION) {
+          finishWaterSink()
+        }
+        return
+      }
+
+      if (!isPlaying()) return
+
+      step(physicsState, dt, {
+        getGroundHeight,
+        shouldCaptureHole: (state) => hazards.checkHole(state),
+        ...getStepOptions(),
+      })
+
+      evaluateHazards()
+
+      const currentPhase = physicsState.phase
+      if (
+        isPlaying() &&
+        previousPhase !== currentPhase &&
+        currentPhase === PHASES.STOPPED
+      ) {
+        onBallStopped()
+      }
+
+      previousPhase = physicsState.phase
+    },
+
+    reset() {
+      rules.strokes = 0
+      rules.gameState = 'playing'
+      rules.canShoot = true
+      rules.loseReason = null
+      sinkState = null
+      ballVisible = true
+      resetBallToStart()
+      emit('onStrokesChange', 0)
+    },
   }
 }

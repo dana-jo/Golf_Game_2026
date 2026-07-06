@@ -16,7 +16,16 @@ export function step(state, dt, options = {}) {
     case PHASES.FLIGHT: {
       stepFlight(state, dt, ball, world, physics);
       const { collided, groundY } = checkGroundCollision(state, getGroundHeight);
-      if (collided) resolveBounce(state, groundY, ball, physics , getGroundHeight);
+      if (collided) {
+        if (options.shouldCaptureHole?.(state, groundY)) {
+          state.position.y = groundY;
+          state.velocity = { x: 0, y: 0, z: 0 };
+          state.angularVelocity = { x: 0, y: 0, z: 0 };
+          state.phase = PHASES.STOPPED;
+        } else {
+          resolveBounce(state, groundY, ball, physics, getGroundHeight);
+        }
+      }
       break;
     }
     case PHASES.SLIDING: {
