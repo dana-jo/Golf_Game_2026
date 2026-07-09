@@ -6,37 +6,58 @@ import { createMouseShotInput } from './input.js'
 import { createTrajectoryPrediction } from './trajectoryPrediction.js'
 import { createConstantsStore } from './constantsStore.js'
 import { createTuningPanel } from './tuningPanel.js'
-import { estimateGroundNormal } from './physics/index.js'
+import { resolveGroundNormal, slopeDegreesFromNormal } from './physics/index.js'
 import { createGameController } from './gameLogic.js'
 import { createHUD } from './ui.js'
+import { createPhysicsHud } from './physicsHud.js'
 import { createDebugOverlay } from './debugOverlay.js'
 import { createHazardChecks, getMeshBoundsY } from './hazards.js'
+import { createHoleInterior } from './holeInterior.js'
+import { createObstacleCollider } from './obstacleCollision.js'
+import { syncBallRotation, resetBallRotation } from './ballVisual.js'
 
 const { scene, camera, renderer, controls, resetCamera, setFollowTarget, updateFollow } = initScene()
 
 async function init() {
-  const { ball, course, ground_water, winning_cylinder } = await loadObjects(scene)
+  const { ball, course, ground_water, winning_cylinder, golf_car, trees } = await loadObjects(scene)
   window.ball = ball
 
   const box = new THREE.Box3().setFromObject(ball)
   const size = new THREE.Vector3()
   box.getSize(size)
   const ballHalfWidth = Math.max(size.x, size.z) / 2
-  const getGroundHeightAt = createGroundHeightQuery(course, ballHalfWidth)
-  const getGroundHeightPhysics = (x, z) => getGroundHeightAt(x, z)
-  const getPredictionGroundHeight = (x, z) => getGroundHeightAt(x, z) ?? 0
-  const getGroundHeightSafe = safeGroundHeight(getGroundHeightAt)
+  const groundQuery = createGroundHeightQuery(course, ballHalfWidth)
+  const getGroundHeightPhysics = (x, z) =>
+    getCenterGroundHeight(x, z) ?? groundQuery.getGroundHeightAt(x, z)
+  const getCenterGroundHeight = (x, z) => groundQuery.getCenterGroundHeight(x, z)
+  const getPredictionGroundHeight = (x, z) =>
+    getCenterGroundHeight(x, z) ?? groundQuery.getGroundHeightAt(x, z) ?? 0
+  const getGroundHeightSafe = safeGroundHeight(getCenterGroundHeight)
 
   const courseBounds = getMeshBoundsY(course)
 
   const constantsStore = createConstantsStore()
-  const getStepOptions = () => constantsStore.getStepOptions()
+  const getStepOptions = () => ({
+    ...constantsStore.getStepOptions(),
+    ball: {
+      ...constantsStore.getBallConstants(),
+      sceneR: ballHalfWidth,
+    },
+    getCenterGroundHeight,
+  })
+
+  const holeInterior = createHoleInterior({
+    winMesh: winning_cylinder,
+    courseMesh: course,
+    getBallRadius: () => ballHalfWidth,
+  })
 
   const hazards = createHazardChecks({
     waterMesh: ground_water,
     winMesh: winning_cylinder,
     getCourseGround: getGroundHeightPhysics,
     getBallRadius: () => ballHalfWidth,
+    holeInterior,
     outOfBoundsY: courseBounds.minY - 3,
   })
 
@@ -44,7 +65,7 @@ async function init() {
   const winZoneBox = new THREE.Box3().setFromObject(winning_cylinder)
   console.log('Win zone (world bounds):', winZoneBox.min, winZoneBox.max)
 
-  const startGroundY = getGroundHeightAt(ball.position.x, ball.position.z) ?? 0
+  const startGroundY = getGroundHeightPhysics(ball.position.x, ball.position.z) ?? 0
   const startPosition = {
     x: ball.position.x,
     y: startGroundY,
@@ -57,8 +78,14 @@ async function init() {
     startPosition.z,
   ))
 
+  const obstacleCollider = createObstacleCollider({ golf_car, trees, ground_water })
+  console.log('Obstacle colliders:', obstacleCollider.meshCount)
+
   const game = createGameController({
     hazards,
+    holeInterior,
+    obstacleCollider,
+    getBallRadius: () => ballHalfWidth,
     startPosition,
     getGroundHeight: getGroundHeightPhysics,
     getStepOptions,
@@ -69,14 +96,21 @@ async function init() {
     onRestart: () => {
       game.reset()
       hud.reset()
+      physicsHud.reset()
+      resetBallRotation(ball)
       resetCamera()
     },
   })
 
+  const physicsHud = createPhysicsHud()
+
   game.setListeners({
     onWin: () => hud.showWin(),
     onLose: (reason) => hud.showLose(reason),
-    onPenalty: (reason) => hud.showPenalty(reason),
+    onPenalty: (reason) => {
+      hud.showPenalty(reason)
+      resetBallRotation(ball)
+    },
     onStrokesChange: (strokes) => hud.updateStrokes(strokes),
   })
 
@@ -95,6 +129,7 @@ async function init() {
         shotParams: pendingAimShot,
         getGroundHeight: getPredictionGroundHeight,
         getStepOptions,
+        visualBallRadius: ballHalfWidth,
       })
     })
   }
@@ -176,15 +211,16 @@ async function init() {
       physicsState.position.y + ballRadius,
       physicsState.position.z
     )
+    syncBallRotation(ball, physicsState.angularVelocity, frameTime)
 
     updateFollow(ball.position, frameTime)
     controls.update()
 
     if (debugOverlay.isVisible()) {
-      const groundNormal = estimateGroundNormal(
-        getGroundHeightSafe,
+      const groundNormal = resolveGroundNormal(
         physicsState.position.x,
-        physicsState.position.z
+        physicsState.position.z,
+        { getCenterGroundHeight, getGroundHeight: getGroundHeightSafe }
       )
       debugOverlay.update({
         position: ball.position,
@@ -192,6 +228,19 @@ async function init() {
         velocity: physicsState.velocity,
       })
     }
+
+    const groundNormal = resolveGroundNormal(
+      physicsState.position.x,
+      physicsState.position.z,
+      { getCenterGroundHeight, getGroundHeight: getGroundHeightSafe }
+    )
+    physicsHud.update({
+      velocity: physicsState.velocity,
+      lastAccel: physicsState.lastAccel,
+      phase: physicsState.phase,
+      canShoot: game.canShoot(),
+      groundSlopeDeg: slopeDegreesFromNormal(groundNormal),
+    })
 
     renderer.render(scene, camera)
   }

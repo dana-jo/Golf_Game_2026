@@ -29,6 +29,7 @@ export function createConstantsStore(initial = DEFAULT_CONSTANTS) {
       e: state.RESTITUTION,
       muK: state.FRICTION_K,
       rollingResistance: state.ROLLING_RESISTANCE,
+      groundDrag: state.GROUND_DRAG,
     }
   }
 

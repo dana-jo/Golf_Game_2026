@@ -5,10 +5,14 @@ import { resolveBounce } from './bounce.js'
 import { stepFlight } from './flight.js'
 import { stepSliding } from './sliding.js'
 import { stepRolling } from './rolling.js'
+import { groundSlidingAccel } from './groundContact.js'
+import { estimateGroundNormal } from './collision.js'
+import { projectOnPlane, dot, v3 } from './vectors.js'
 import { ballInertia } from './constants.js'
 
 const DT = 1 / 60
 const FLAT_GROUND = () => 0
+const FLAT_SAMPLING = { getGroundHeight: FLAT_GROUND }
 
 const TEST_BALL = { m: 0.0459, R: 0.0214 }
 const TEST_WORLD = { g: 9.81, rho: 1.225, stopSpeed: 0.05 }
@@ -32,6 +36,7 @@ describe('collision', () => {
 
     expect(checkGroundCollision(state, FLAT_GROUND)).toEqual({
       collided: true,
+      grounded: true,
       groundY: 0,
     })
   })
@@ -104,7 +109,7 @@ describe('bounce', () => {
       angularVelocity: { x: 0, y: 0, z: 0 },
     })
 
-    resolveBounce(state, 0, TEST_BALL, { e: 0.6, muK: 0.35 }, FLAT_GROUND)
+    resolveBounce(state, 0, TEST_BALL, { e: 0.6, muK: 0.35 }, FLAT_SAMPLING)
 
     expect(state.velocity.y).toBeCloseTo(6, 5)
     expect(state.phase).toBe(PHASES.FLIGHT)
@@ -117,7 +122,7 @@ describe('bounce', () => {
       angularVelocity: { x: 0, y: 0, z: 0 },
     })
 
-    resolveBounce(state, 0, TEST_BALL, HIGH_FRICTION_PHYSICS, FLAT_GROUND)
+    resolveBounce(state, 0, TEST_BALL, HIGH_FRICTION_PHYSICS, FLAT_SAMPLING)
 
     expect(state.velocity.z).toBeCloseTo(14 * (5 / 7), 4)
     expect(state.velocity.x).toBeCloseTo(0, 5)
@@ -131,7 +136,7 @@ describe('bounce', () => {
       angularVelocity: { x: 0, y: 0, z: 0 },
     })
 
-    resolveBounce(state, 0, TEST_BALL, HIGH_FRICTION_PHYSICS, FLAT_GROUND)
+    resolveBounce(state, 0, TEST_BALL, HIGH_FRICTION_PHYSICS, FLAT_SAMPLING)
 
     const inertia = ballInertia(TEST_BALL.m, TEST_BALL.R)
     const expectedOmega = (5 / 7) * (tangentialSpeed / TEST_BALL.R)
@@ -141,6 +146,49 @@ describe('bounce', () => {
 })
 
 describe('sliding and rolling', () => {
+  it('decelerates on flat ground when sliding with spin mismatch', () => {
+    const speed = 20
+    const state = createInitialState({
+      position: { x: 0, y: 0, z: 0 },
+      velocity: { x: 0, y: 0, z: speed },
+      angularVelocity: { x: 0, y: 0, z: 0 },
+    })
+    state.phase = PHASES.SLIDING
+
+    stepSliding(state, DT, 0, TEST_BALL, TEST_WORLD, NO_AIR_PHYSICS, FLAT_SAMPLING)
+
+    expect(state.velocity.z).toBeLessThan(speed)
+    const accelAlongMotion = state.lastAccel?.z ?? 0
+    expect(accelAlongMotion).toBeLessThan(0)
+  })
+
+  it('switches to rolling on downhill slide', () => {
+    const slope = (x) => -0.2 * x
+    const state = createInitialState({
+      position: { x: 0, y: slope(0), z: 0 },
+      velocity: { x: 2, y: 0, z: 0 },
+      angularVelocity: { x: 0, y: 0, z: 0 },
+    })
+    state.phase = PHASES.SLIDING
+
+    stepSliding(state, DT, slope(0), TEST_BALL, TEST_WORLD, NO_AIR_PHYSICS, { getGroundHeight: slope })
+
+    expect(state.phase).toBe(PHASES.ROLLING)
+  })
+
+  it('applies downhill gravity while sliding', () => {
+    const slope = (x) => -0.2 * x
+    const normal = estimateGroundNormal(slope, 0, 0)
+    const gT = projectOnPlane(v3(0, -TEST_WORLD.g, 0), normal)
+    const normalLoad = Math.max(-dot(v3(0, -TEST_WORLD.g, 0), normal), 0)
+    const rollingResist = NO_AIR_PHYSICS.rollingResistance * normalLoad
+    const friction = NO_AIR_PHYSICS.muK * normalLoad
+    const accel = groundSlidingAccel(v3(2, 0, 0), gT, friction, rollingResist)
+
+    expect(accel.x).toBeGreaterThan(0)
+    expect(dot(accel, v3(2, 0, 0))).toBeGreaterThan(0)
+  })
+
   it('transitions from sliding to rolling when slip vanishes', () => {
     const speed = 3
     const state = createInitialState({
@@ -150,7 +198,7 @@ describe('sliding and rolling', () => {
     })
     state.phase = PHASES.SLIDING
 
-    stepSliding(state, DT, 0, TEST_BALL, TEST_WORLD, NO_AIR_PHYSICS, FLAT_GROUND)
+    stepSliding(state, DT, 0, TEST_BALL, TEST_WORLD, NO_AIR_PHYSICS, FLAT_SAMPLING)
 
     expect(state.phase).toBe(PHASES.ROLLING)
   })
@@ -179,21 +227,37 @@ describe('sliding and rolling', () => {
     expect(state.velocity.z).toBe(0)
   })
 
-  it('accelerates downhill while rolling', () => {
+  it('brakes while rolling uphill', () => {
     const slope = (x) => 0.15 * x
     const state = createInitialState({
       position: { x: 0, y: slope(0), z: 0 },
-      velocity: { x: 0, y: 0, z: 0 },
+      velocity: { x: 1.5, y: 0, z: 0 },
       angularVelocity: { x: 0, y: 0, z: 0 },
     })
     state.phase = PHASES.ROLLING
 
+    const speedBefore = state.velocity.x
     stepRolling(state, DT, slope(0), TEST_BALL, TEST_WORLD, {
       ...NO_AIR_PHYSICS,
       rollingResistance: 0,
-    }, slope)
+    }, { getGroundHeight: slope })
 
-    expect(state.velocity.x).toBeLessThan(0)
+    expect(state.velocity.x).toBeLessThan(speedBefore)
+  })
+
+  it('accelerates while rolling downhill', () => {
+    const slope = (x) => -0.15 * x
+    const state = createInitialState({
+      position: { x: 0, y: slope(0), z: 0 },
+      velocity: { x: 1.5, y: 0, z: 0 },
+      angularVelocity: { x: 1.5 / TEST_BALL.R, y: 0, z: 0 },
+    })
+    state.phase = PHASES.ROLLING
+
+    const speedBefore = state.velocity.x
+    stepRolling(state, DT, slope(0), TEST_BALL, TEST_WORLD, NO_AIR_PHYSICS, { getGroundHeight: slope })
+
+    expect(state.velocity.x).toBeGreaterThan(speedBefore)
   })
 })
 
@@ -223,7 +287,7 @@ describe('step integration', () => {
     expect(state.position.y).toBeGreaterThanOrEqual(0)
   })
 
-  it('captures the ball when shouldCaptureHole returns true', () => {
+  it('defers hole capture to game logic instead of freezing in step', () => {
     const state = createInitialState({
       position: { x: 0, y: 0.2, z: 0 },
       velocity: { x: 0, y: -8, z: 0 },
@@ -237,15 +301,10 @@ describe('step integration', () => {
       shouldCaptureHole: () => true,
     }
 
-    let captured = false
-    for (let i = 0; i < 50 && !captured; i += 1) {
-      step(state, DT, options)
-      if (state.phase === PHASES.STOPPED) captured = true
-    }
+    step(state, DT, options)
 
-    expect(captured).toBe(true)
-    expect(state.velocity).toEqual({ x: 0, y: 0, z: 0 })
-    expect(state.position.y).toBe(0)
+    expect(state.phase).toBe(PHASES.FLIGHT)
+    expect(state.velocity.y).toBeLessThan(0)
   })
 
   it('eventually comes to rest after a low horizontal shot', () => {

@@ -41,6 +41,7 @@ export function stepFlight(state, dt, ball, world, physics) {
   state.velocity = add(state.velocity, scale(accel, dt));
   state.position = add(state.position, scale(state.velocity, dt));
   state.angularVelocity = add(state.angularVelocity, scale(alpha, dt));
+  state.lastAccel = { x: accel.x, y: accel.y, z: accel.z };
 
   return state;
 }

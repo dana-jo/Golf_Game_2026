@@ -62,6 +62,7 @@ export function createHazardChecks({
   winMesh,
   getCourseGround,
   getBallRadius,
+  holeInterior = null,
   lipClearance = 0.08,
   outOfBoundsY = -20,
 }) {
@@ -82,15 +83,7 @@ export function createHazardChecks({
 
   function snapPositionToHole(position) {
     if (!winMesh) return
-
-    winMesh.updateWorldMatrix(true, true)
-    _winBox.setFromObject(winMesh)
-    _winBox.getCenter(_winCenter)
-    const ballRadius = getBallRadius?.() ?? 0.02
-
-    position.x = _winCenter.x
-    position.z = _winCenter.z
-    position.y = _winBox.min.y - ballRadius
+    holeInterior?.snapRestPosition(position)
   }
 
   return {

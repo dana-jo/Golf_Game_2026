@@ -9,9 +9,10 @@ export const DEFAULT_CONSTANTS = {
   BALL_RADIUS: 0.0214,
   BALL_MASS: 0.0459,
   RESTITUTION: 0.60,
-  FRICTION_K: 0.35,
-  ROLLING_RESISTANCE: 0.05,
-  STOP_SPEED: 0.05,
+  FRICTION_K: 0.4,
+  ROLLING_RESISTANCE: 0.10,
+  GROUND_DRAG: 0.30,
+  STOP_SPEED: 0.15,
   SCENE_SCALE: 10,
 }
 
@@ -27,6 +28,7 @@ export const TUNABLE_PARAMETERS = [
   { key: 'RESTITUTION', label: 'Restitution (e)', unit: '' },
   { key: 'FRICTION_K', label: 'Friction (μk)', unit: '' },
   { key: 'ROLLING_RESISTANCE', label: 'Rolling resist.', unit: '' },
+  { key: 'GROUND_DRAG', label: 'Ground drag', unit: '/s' },
   { key: 'STOP_SPEED', label: 'Stop speed', unit: 'm/s' },
   { key: 'SCENE_SCALE', label: 'Scene scale', unit: '×' },
 ]

@@ -1,52 +1,88 @@
-// Section 3 
+// Section 3 — sliding: friction opposes motion, spin handled separately.
 import { add, sub, scale, cross, dot, length, normalize, v3, projectOnPlane } from './vectors.js';
-import { estimateGroundNormal } from './collision.js';
+import { resolveGroundNormal } from './collision.js';
+import { PHASES } from './state.js';
+import {
+  updateSmoothedNormal,
+  keepOnSurface,
+  groundSlidingAccel,
+  applyGroundDrag,
+  setLastAccel,
+  canRestOnSlope,
+} from './groundContact.js';
 
-export function stepSliding(state, dt, groundY, ball, world, physics, getGroundHeight) {
-  const n = getGroundHeight
-    ? estimateGroundNormal(getGroundHeight, state.position.x, state.position.z)
+const CRAWL_SPEED = 0.35;
+const SLIP_TO_ROLLING = 0.25;
+
+export function stepSliding(state, dt, groundY, ball, world, physics, groundSampling) {
+  const contactR = ball.sceneR ?? ball.R;
+  const rawNormal = groundSampling
+    ? resolveGroundNormal(state.position.x, state.position.z, groundSampling)
     : v3(0, 1, 0);
+  const n = updateSmoothedNormal(state, rawNormal);
 
   state.position.y = groundY;
-
-  state.velocity = projectOnPlane(state.velocity, n);
+  state.velocity = keepOnSurface(state.velocity, n);
 
   const sh = length(state.velocity);
-  const dir = sh > 1e-6 ? normalize(state.velocity) : v3(0, 0, 0);
+  const gVec = v3(0, -world.g, 0);
+  const gTangential = projectOnPlane(gVec, rawNormal);
+  const gSlope = length(gTangential);
+  const normalLoad = Math.max(-dot(gVec, rawNormal), 0);
+  const rollingResistAccel = physics.rollingResistance * normalLoad;
+  const frictionAccelMag = physics.muK * normalLoad;
+  const groundDrag = physics.groundDrag ?? 0.3;
+  const slopeAlongMotion = sh > 1e-6 ? dot(gTangential, normalize(state.velocity)) : 0;
 
-  const backspinAxis = normalize(cross(n, sh > 1e-6 ? dir : n));
-  const omega = dot(state.angularVelocity, backspinAxis);
-  const slip = sh - omega * ball.R;
-
-  if (Math.abs(slip) < 1e-3) {
-    state.phase = 'rolling';
+  // Downhill: roll instead of skidding to a halt under full kinetic friction.
+  if (slopeAlongMotion > rollingResistAccel * 0.9 && sh > world.stopSpeed * 0.4) {
+    state.phase = PHASES.ROLLING;
     return state;
   }
 
-  const gVec = v3(0, -world.g, 0);
-  const gTangential = projectOnPlane(gVec, n); // downhill pull, Section 3.7
-  const normalLoad = -dot(gVec, n); // g*cos(slope), Section 3.2
+  if (sh < CRAWL_SPEED && canRestOnSlope(gSlope, rollingResistAccel)) {
+    state.phase = PHASES.STOPPED;
+    state.velocity = v3(0, 0, 0);
+    state.angularVelocity = v3(0, 0, 0);
+    setLastAccel(state, v3(0, 0, 0));
+    return state;
+  }
 
-  const sign = Math.sign(slip);
-  const frictionAccelMag = physics.muK * normalLoad;
-  const frictionDir =
-    sh > 1e-6
-      ? dir
-      : length(gTangential) > 1e-6
-        ? normalize(gTangential)
-        : v3(0, 0, 0);
+  if (sh < 1e-6) {
+    const accel = groundSlidingAccel(state.velocity, gTangential, frictionAccelMag, rollingResistAccel);
+    setLastAccel(state, accel);
+    const kick = add(state.velocity, scale(accel, dt));
+    if (length(kick) > world.stopSpeed) {
+      state.velocity = kick;
+      state.phase = PHASES.ROLLING;
+    }
+    return state;
+  }
 
-  // Section 3.3
-  const accel = sub(gTangential, scale(frictionDir, sign * frictionAccelMag));
+  const dir = normalize(state.velocity);
+  const backspinAxis = normalize(cross(n, dir));
+  const omega = dot(state.angularVelocity, backspinAxis);
+  const slip = sh - omega * contactR;
+  const slipRatio = Math.abs(slip) / sh;
+
+  if (slipRatio < SLIP_TO_ROLLING || Math.abs(slip) < 0.4) {
+    state.phase = PHASES.ROLLING;
+    return state;
+  }
+
+  const sign = Math.sign(slip) || 1;
+  const accel = groundSlidingAccel(state.velocity, gTangential, frictionAccelMag, rollingResistAccel);
+  setLastAccel(state, accel);
 
   let newVelocity = add(state.velocity, scale(accel, dt));
-  newVelocity = projectOnPlane(newVelocity, n); 
+  newVelocity = keepOnSurface(newVelocity, n);
+  newVelocity = applyGroundDrag(newVelocity, groundDrag, dt, slopeAlongMotion);
   state.velocity = newVelocity;
 
   state.position.x += state.velocity.x * dt;
   state.position.z += state.velocity.z * dt;
 
-  const alpha = sign * (5 * frictionAccelMag) / (2 * ball.R);
+  const alpha = sign * (5 * frictionAccelMag) / (2 * contactR);
   const newOmega = omega + alpha * dt;
   state.angularVelocity = add(
     sub(state.angularVelocity, scale(backspinAxis, omega)),
@@ -54,9 +90,18 @@ export function stepSliding(state, dt, groundY, ball, world, physics, getGroundH
   );
 
   const newSh = length(state.velocity);
-  const newSlip = newSh - newOmega * ball.R;
-  if (Math.sign(newSlip) !== sign || Math.abs(newSlip) < 1e-3) {
-    state.phase = 'rolling';
+  const newSlip = newSh - newOmega * contactR;
+  if (Math.abs(newSlip) / Math.max(newSh, 0.1) < SLIP_TO_ROLLING) {
+    if (newSh > world.stopSpeed || !canRestOnSlope(gSlope, rollingResistAccel)) {
+      state.phase = PHASES.ROLLING;
+    }
+  }
+
+  if (newSh < world.stopSpeed && canRestOnSlope(gSlope, rollingResistAccel)) {
+    state.phase = PHASES.STOPPED;
+    state.velocity = v3(0, 0, 0);
+    state.angularVelocity = v3(0, 0, 0);
+    setLastAccel(state, v3(0, 0, 0));
   }
 
   return state;

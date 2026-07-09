@@ -5,6 +5,7 @@
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { BALL_R } from './constants.js'
+import { addBallRollMarkers } from './ballVisual.js'
 
 // Create one loader instance, reused for all models
 const loader = new GLTFLoader()
@@ -60,6 +61,7 @@ export async function loadObjects(scene) {
     }
   })
   ball.name = 'ball'
+  addBallRollMarkers(ball, BALL_R)
   scene.add(ball)
   console.log('Ball loaded')
   
@@ -216,5 +218,13 @@ const course = await loadModel('/models/golf_environment/ground_with_holder.glb'
 //   const holePosition = new THREE.Vector3()
 //   hole.getWorldPosition(holePosition)
 
-  return { ball, course, club, ground_water, winning_cylinder }
+  return {
+    ball,
+    course,
+    club,
+    ground_water,
+    winning_cylinder,
+    golf_car,
+    trees: [golf_tree_1, golf_tree_2, golf_tree_3, golf_tree_4],
+  }
 }

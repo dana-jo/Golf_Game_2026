@@ -9,13 +9,10 @@ const MAX_TIME = 8
 const PREDICT_DT = 1 / 60
 const RECORD_EVERY_STEPS = 3
 const LANDING_SEARCH_STEPS = 6
+const MIN_AIRBORNE_HEIGHT = 0.03
 
 function cloneVector(vector) {
   return { x: vector.x, y: vector.y, z: vector.z }
-}
-
-function crossedGround(state, getGroundHeight) {
-  return state.velocity.y < 0 && state.position.y <= getGroundHeight(state.position.x, state.position.z)
 }
 
 function refineLandingPoint(previous, current, getGroundHeight) {
@@ -72,10 +69,10 @@ export function createTrajectoryPrediction(scene) {
   marker.visible = false
   scene.add(marker)
 
-  function writePoint(index, point, ballRadius) {
+  function writePoint(index, point, visualRadius) {
     const offset = index * 3
     positions[offset] = point.x
-    positions[offset + 1] = point.y + ballRadius
+    positions[offset + 1] = point.y + visualRadius
     positions[offset + 2] = point.z
   }
 
@@ -85,7 +82,7 @@ export function createTrajectoryPrediction(scene) {
     geometry.setDrawRange(0, 0)
   }
 
-  function update({ startPosition, shotParams, getGroundHeight, getStepOptions }) {
+  function update({ startPosition, shotParams, getGroundHeight, getStepOptions, visualBallRadius = 0 }) {
     const { ball, world, physics } = getStepOptions()
     const state = createInitialState({
       position: cloneVector(startPosition),
@@ -95,8 +92,9 @@ export function createTrajectoryPrediction(scene) {
 
     let pointCount = 0
     let previousPosition = cloneVector(state.position)
+    let airborne = false
 
-    writePoint(pointCount, state.position, ball.R)
+    writePoint(pointCount, state.position, visualBallRadius)
     pointCount += 1
 
     const maxSteps = Math.ceil(MAX_TIME / PREDICT_DT)
@@ -104,15 +102,24 @@ export function createTrajectoryPrediction(scene) {
       previousPosition = cloneVector(state.position)
       stepFlight(state, PREDICT_DT, ball, world, physics)
 
+      const groundY = getGroundHeight(state.position.x, state.position.z)
+      if (state.position.y > groundY + MIN_AIRBORNE_HEIGHT) {
+        airborne = true
+      }
+
       if (stepIndex % RECORD_EVERY_STEPS === 0) {
-        writePoint(pointCount, state.position, ball.R)
+        writePoint(pointCount, state.position, visualBallRadius)
         pointCount += 1
       }
 
-      if (crossedGround(state, getGroundHeight)) {
+      if (
+        airborne &&
+        state.velocity.y < 0 &&
+        state.position.y <= groundY
+      ) {
         const landing = refineLandingPoint(previousPosition, state.position, getGroundHeight)
-        writePoint(pointCount - 1, landing, ball.R)
-        marker.position.set(landing.x, landing.y + ball.R, landing.z)
+        writePoint(pointCount - 1, landing, visualBallRadius)
+        marker.position.set(landing.x, landing.y + visualBallRadius, landing.z)
         marker.visible = true
         break
       }

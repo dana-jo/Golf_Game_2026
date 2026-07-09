@@ -18,6 +18,8 @@ export function createInitialState({
     velocity: { ...velocity },
     angularVelocity: { ...angularVelocity },
     phase: PHASES.FLIGHT,
+    groundNormal: v3(0, 1, 0),
+    lastAccel: v3(0, 0, 0),
     time: 0,
   };
 }

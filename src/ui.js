@@ -94,6 +94,25 @@ const restartBtn = document.createElement('button')
     fontFamily: 'monospace',
     fontSize: '20px',
     zIndex: 20,
+backgroundColor: '#000', 
+
+    color: '#fff',
+
+    border: 'none',
+
+    borderRadius: '20px', 
+
+    boxShadow: '0 4px 6px rgba(0,0,0,0.2)',
+
+    transition: 'all 0.2s ease',
+
+    textTransform: 'uppercase',
+
+    letterSpacing: '1px',
+
+
+
+    
   })
 
   Object.assign(message.style, {
@@ -117,6 +136,21 @@ const restartBtn = document.createElement('button')
     fontSize: '14px',
     cursor: 'pointer',
     zIndex: 40,
+    backgroundColor: '#000', 
+
+    color: '#fff',
+
+    border: 'none',
+
+    borderRadius: '20px', 
+
+    boxShadow: '0 4px 6px rgba(0,0,0,0.2)',
+
+    transition: 'all 0.2s ease',
+
+    textTransform: 'uppercase',
+
+    letterSpacing: '1px',
   })
 restartBtn.textContent = 'Restart'
  restartBtn.addEventListener('click', () => {
@@ -165,7 +199,6 @@ document.body.appendChild(restartBtn)
       clearTimeout(penaltyTimeout)
       penaltyTimeout = null
     }
-    resetCamera()
   }
 
   function reset() {

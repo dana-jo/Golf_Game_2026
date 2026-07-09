@@ -1,14 +1,19 @@
 // Game rules, ball state, hazards, and physics orchestration.
 
 import { createInitialState, step, PHASES } from './physics/index.js'
+import { stepHoleCapture, isHoleCaptureSettled } from './holeInterior.js'
 
 const SINK_DURATION = 1.4
 const SINK_SPEED = 1.8
+const HOLE_SETTLE_FRAMES = 18
 
 const zeroMotion = () => ({ x: 0, y: 0, z: 0 })
 
 export function createGameController({
   hazards,
+  holeInterior,
+  obstacleCollider = null,
+  getBallRadius,
   startPosition,
   getGroundHeight,
   getStepOptions,
@@ -29,8 +34,13 @@ export function createGameController({
   physicsState.phase = PHASES.STOPPED
 
   let sinkState = null
+  let holeCapture = null
   let previousPhase = PHASES.STOPPED
   let ballVisible = true
+  let crawlFrames = 0
+
+  const CRAWL_SPEED = 0.4
+  const CRAWL_FRAME_LIMIT = 30
 
   const listeners = {
     onWin: null,
@@ -61,7 +71,9 @@ export function createGameController({
     })
     physicsState.phase = PHASES.STOPPED
     previousPhase = PHASES.STOPPED
+    crawlFrames = 0
     ballVisible = true
+    holeCapture = null
   }
 
   function handleWin() {
@@ -69,7 +81,19 @@ export function createGameController({
     freezeBall()
     rules.gameState = 'won'
     rules.canShoot = false
+    holeCapture = null
     emit('onWin')
+  }
+
+  function beginHoleCapture() {
+    if (holeCapture || !holeInterior) {
+      handleWin()
+      return
+    }
+
+    holeCapture = { settleFrames: 0 }
+    physicsState.phase = PHASES.FLIGHT
+    rules.canShoot = false
   }
 
   function handleStrokeLimitLose() {
@@ -81,7 +105,7 @@ export function createGameController({
   }
 
   function applyHazardPenalty(reason) {
-    // rules.strokes++
+    rules.strokes += 1
     emit('onStrokesChange', rules.strokes)
 
     if (rules.strokes >= maxStrokes) {
@@ -110,10 +134,10 @@ export function createGameController({
   }
 
   function evaluateHazards(previousPosition) {
-    if (!isPlaying() || sinkState) return
+    if (!isPlaying() || sinkState || holeCapture) return
 
     if (hazards.checkHole(physicsState, previousPosition)) {
-      handleWin()
+      beginHoleCapture()
       return
     }
 
@@ -128,13 +152,52 @@ export function createGameController({
     }
   }
 
+  function settleIfCrawling() {
+    if (holeCapture) return
+
+    const { velocity, phase } = physicsState
+    const speed = Math.hypot(velocity.x, velocity.y, velocity.z)
+    const onGround = phase === PHASES.ROLLING || phase === PHASES.SLIDING
+
+    if (!onGround || speed >= CRAWL_SPEED) {
+      crawlFrames = 0
+      return
+    }
+
+    crawlFrames += 1
+    if (crawlFrames < CRAWL_FRAME_LIMIT) return
+
+    crawlFrames = 0
+    freezeBall()
+    if (isPlaying() && !rules.canShoot) {
+      onBallStopped()
+    }
+  }
+
   function onBallStopped() {
+    if (holeCapture) return
+
     if (hazards.checkHole(physicsState)) {
-      handleWin()
+      beginHoleCapture()
     } else if (rules.strokes >= maxStrokes) {
       handleStrokeLimitLose()
     } else {
       rules.canShoot = true
+    }
+  }
+
+  function updateHoleCapture(dt) {
+    const ballRadius = getBallRadius?.() ?? 0.02
+    stepHoleCapture(physicsState, dt, holeInterior, ballRadius)
+
+    if (isHoleCaptureSettled(physicsState, holeInterior, ballRadius)) {
+      holeCapture.settleFrames += 1
+    } else {
+      holeCapture.settleFrames = 0
+    }
+
+    if (holeCapture.settleFrames >= HOLE_SETTLE_FRAMES) {
+      handleWin()
     }
   }
 
@@ -151,9 +214,10 @@ export function createGameController({
       return rules.strokes
     },
 
-    isPlaying,
-    canShoot: () => rules.canShoot && isPlaying(),
+    isPlaying: () => isPlaying() || holeCapture !== null,
+    canShoot: () => rules.canShoot && isPlaying() && !holeCapture,
     isBallVisible: () => ballVisible,
+    isHoleCapturing: () => holeCapture !== null,
 
     registerShot() {
       rules.strokes++
@@ -162,6 +226,8 @@ export function createGameController({
     },
 
     launchShot({ velocity, angularVelocity }) {
+      crawlFrames = 0
+      holeCapture = null
       physicsState = createInitialState({
         position: { ...physicsState.position },
         velocity,
@@ -180,6 +246,11 @@ export function createGameController({
         return
       }
 
+      if (holeCapture) {
+        updateHoleCapture(dt)
+        return
+      }
+
       if (!isPlaying()) return
 
       const previousPosition = { ...physicsState.position }
@@ -190,7 +261,12 @@ export function createGameController({
         ...getStepOptions(),
       })
 
+      if (obstacleCollider) {
+        obstacleCollider.resolve(physicsState, getBallRadius?.() ?? 0.02)
+      }
+
       evaluateHazards(previousPosition)
+      settleIfCrawling()
 
       const currentPhase = physicsState.phase
       if (
@@ -210,6 +286,8 @@ export function createGameController({
       rules.canShoot = true
       rules.loseReason = null
       sinkState = null
+      holeCapture = null
+      crawlFrames = 0
       ballVisible = true
       resetBallToStart()
       emit('onStrokesChange', 0)
